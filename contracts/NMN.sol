@@ -32,9 +32,10 @@ contract NMN {
   mapping(Coin => mapping(Coin => Pool)) public pools;
   mapping(Coin => mapping(Coin => mapping(address => uint256))) public userShares;
 
-  error ZeroAmount();
   error IdenticalTokens();
+  error ZeroAmount();
   error PoolDoesNotExist();
+  error ZeroLiquidity();
 
   constructor(Token[] memory _tokens) {
     mirian = _tokens[0];
@@ -55,6 +56,7 @@ contract NMN {
   function sortCoins( Coin _coin0, Coin _coin1)
     public pure returns (Coin coin0, Coin coin1)
   {
+    if (_coin0 == _coin1) revert IdenticalTokens();
     return (_coin0 < _coin1 ? (_coin0, _coin1) : (_coin1, _coin0));
   }
 
@@ -148,6 +150,8 @@ contract NMN {
     (Coin coin0, Coin coin1) = sortCoins(_coin0,_coin1);
     Pool storage pool = pools[coin0][coin1];
     if (!pool.exists) revert PoolDoesNotExist();
+
+    if (pool.totalShares == 0) revert ZeroLiquidity();
 
     if (_coin0 == coin0) {
       coin1Amount = (_coin0Amount * pools[coin0][coin1].reserve1) / pools[coin0][coin1].reserve0;
