@@ -20,6 +20,8 @@ contract NMN {
   Token[] public tokens;
 
   uint256 constant PRECISION = 10**18;
+  uint256 public constant DEFAULT_FEE = 30;
+  uint256 public constant FEE_DENOMINATOR = 10000 ;
 
   struct Pool {
     uint256 reserve0;
@@ -32,10 +34,23 @@ contract NMN {
   mapping(Coin => mapping(Coin => Pool)) public pools;
   mapping(Coin => mapping(Coin => mapping(address => uint256))) public userShares;
 
+  event Swap(
+    address indexed user,
+    address indexed tokenIn,
+    address indexed tokenOut,
+    uint256 amountIn,
+    uint256 amountOut,
+    uint256 feeAmount,
+    uint256 currentReserve0,
+    uint256 currentReserve1,
+    uint256 timestamp
+  );
+
   error IdenticalTokens();
   error ZeroAmount();
   error PoolDoesNotExist();
   error ZeroLiquidity();
+  error notEnoughLiquidity();
 
   constructor(Token[] memory _tokens) {
     mirian = _tokens[0];
@@ -89,19 +104,25 @@ contract NMN {
     return (pools[coin0][coin1]);
   }
   
-  function updatePoolBalances(
-    Coin _coin1, uint256 _coin1Amount,
-    Coin _coin2, uint256 _coin2Amount
-    ) public {
-    pools[_coin1][_coin2].reserve0 += _coin1Amount;
-    pools[_coin1][_coin2].reserve1 += _coin2Amount;
-    pools[_coin1][_coin2].K = pools[_coin1][_coin2].reserve0 * pools[_coin1][_coin2].reserve1;
-    
+  function calculateLiquidityAmount(Coin _coin0, Coin _coin1,  uint256 _coin0Amount)
+    public view returns(uint256 coin1Amount) {
+    if (_coin0Amount == 0) revert ZeroAmount();
+
+    (Coin coin0, Coin coin1) = sortCoins(_coin0,_coin1);
+    Pool storage pool = pools[coin0][coin1];
+    if (!pool.exists) revert PoolDoesNotExist();
+
+    if (pool.totalShares == 0) revert ZeroLiquidity();
+
+    if (_coin0 == coin0) {
+      coin1Amount = (_coin0Amount * pools[coin0][coin1].reserve1) / pools[coin0][coin1].reserve0;
+    } else {
+      coin1Amount = (_coin0Amount * pools[coin0][coin1].reserve0) / pools[coin0][coin1].reserve1;
+    }
   }
 
-  function addLiquidity(
-    Coin _coin0, uint256 _coin0Amount, Coin _coin1, uint256 _coin1Amount
-  ) external{
+  function addLiquidity(Coin _coin0, uint256 _coin0Amount, Coin _coin1, uint256 _coin1Amount)
+    external{
     // sort everything
     (
       Coin coin0, Coin coin1, uint256 coin0Amount, uint256 coin1Amount
@@ -137,31 +158,109 @@ contract NMN {
     }
 
     //  Manage pool
-    updatePoolBalances(coin0, coin0Amount, coin1, coin1Amount);
+    pool.reserve0 += coin0Amount;
+    pool.reserve1 += coin1Amount;
+    pool.K = pool.reserve0 * pool.reserve1;
     pool.totalShares += sharesToMint;
     userShares[coin0][coin1][msg.sender] += sharesToMint;
 
   }
 
-  function calculateLiquidityAmount(Coin _coin0, Coin _coin1,  uint256 _coin0Amount)
-    public view returns(uint256 coin1Amount) {
-    if (_coin0Amount == 0) revert ZeroAmount();
+  
+  function calculateAmountOut(Coin _coinIn, Coin _coinOut, uint256 _amountIn)
+    public view returns (uint256 amountOut, uint256 feeAmount, uint256 slippage)
+  {
+    if (_amountIn == 0) revert ZeroAmount();
 
-    (Coin coin0, Coin coin1) = sortCoins(_coin0,_coin1);
+    // Sort coins to choose the right pool
+    (Coin coin0 ,Coin coin1) = sortCoins(_coinIn, _coinOut);
     Pool storage pool = pools[coin0][coin1];
-    if (!pool.exists) revert PoolDoesNotExist();
+    if (!pool.exists) revert();
 
-    if (pool.totalShares == 0) revert ZeroLiquidity();
+    // Choose which reserve coresponds to which coin
+    (uint256 reserveIn, uint256 reserveOut) = (_coinIn == coin0)
+      ? (pool.reserve0, pool.reserve1)
+      : (pool.reserve1, pool.reserve0);
+  
+    if (reserveIn <= 0 || reserveOut <= 0 ) revert notEnoughLiquidity();
 
-    if (_coin0 == coin0) {
-      coin1Amount = (_coin0Amount * pools[coin0][coin1].reserve1) / pools[coin0][coin1].reserve0;
-    } else {
-      coin1Amount = (_coin0Amount * pools[coin0][coin1].reserve0) / pools[coin0][coin1].reserve1;
+    // Calculate no Fee Output (No Fee,  with Slippage)
+    uint256 pureAmountOut = (_amountIn * reserveOut) / (reserveIn + _amountIn);
+
+    // Calculate Current spot-price Output (with Fee but without Slippage)
+    uint256 spotNumerator = _amountIn * ( FEE_DENOMINATOR - DEFAULT_FEE ) * reserveOut;
+    uint256 spotDenominator = reserveIn * FEE_DENOMINATOR;
+    uint256 spotAmountOut = spotNumerator / spotDenominator;
+
+    // Calculate Actual Output ( with fees and slippage)
+    uint256 amountInAfterFee = _amountIn * ( FEE_DENOMINATOR - DEFAULT_FEE );
+    uint256 numerator = amountInAfterFee * reserveOut;
+    uint256 denominator =  reserveIn * FEE_DENOMINATOR  +  amountInAfterFee;
+    amountOut = numerator /denominator;
+
+    if (amountOut == reserveOut) {
+      amountOut--;
     }
 
-   
+    // Calculate Fee cost 
+    feeAmount =  pureAmountOut > amountOut ? pureAmountOut - amountOut : 0;
+
+    // Calculate Slippage ( every 100 slippage is 1% lost price  (Spot-Actual)/Spot )
+
+    if(spotAmountOut > amountOut) {
+      uint256 slippageLoss = spotAmountOut - amountOut;
+      slippage = (slippageLoss * 10000) / spotAmountOut;
+    } else {
+      slippage = 0;
+    }
 
   }
 
+  function swap(Coin _coinIn, Coin _coinOut, uint256 _coinInAmount)
+    external returns(uint256 coinOutAmount) 
+  {
+    // Calculate coin1Amount
+    uint256 feeAmount;
+    (coinOutAmount, feeAmount, ) = calculateAmountOut(_coinIn, _coinOut, _coinInAmount);
+    
+    (Coin coin0, Coin coin1) = sortCoins(_coinIn, _coinOut);
+    Pool storage pool = pools[coin0][coin1];
 
+    Token tokenIn = Token(tokens[uint256(_coinIn)]);
+    Token tokenOut = Token(tokens[uint256(_coinOut)]);
+
+    // Do swap
+    // 1. transfer _coinIn out of user wallet to contract
+    require(
+      tokenIn.transferFrom(msg.sender, address(this), _coinInAmount),
+      string(abi.encodePacked("failed to transfer ", tokenIn.name()))
+    );
+    
+    // 2. update pool
+    if (_coinIn == coin0) {
+      pool.reserve0 += _coinInAmount;
+      pool.reserve1 -= coinOutAmount;
+    } else {
+      pool.reserve1 += _coinInAmount;
+      pool.reserve0 -= coinOutAmount;
+    }
+    pool.K = pool.reserve0 * pool.reserve1;
+
+    // 3. transfer _coinOut from contract to user wallet
+    require(
+      tokenOut.transfer(msg.sender, coinOutAmount),
+      string(abi.encodePacked("failed to transfer ", tokenOut.name()))
+    );
+
+    emit Swap(
+      msg.sender,
+      address(tokenIn),
+      address(tokenOut),
+      _coinInAmount,
+      coinOutAmount,
+      feeAmount,
+      pool.reserve0,
+      pool.reserve1,
+      block.timestamp);
+  }
 }

@@ -21,6 +21,8 @@ describe('NMN', () => {
     accounts = await ethers.getSigners()
     deployer = accounts[0]
     liquidityProvider = accounts[1]
+    investor1 = accounts[2]
+    investor2 = accounts[3]
 
     // Deploy Tokens
     const Token = await ethers.getContractFactory('Token')
@@ -58,6 +60,13 @@ describe('NMN', () => {
     transaction = await brass.connect(deployer).transfer(liquidityProvider.address, tokens(100000))
     await transaction.wait()
     transaction = await copper.connect(deployer).transfer(liquidityProvider.address, tokens(100000))
+    await transaction.wait()
+    
+    // send mirian to investor 1
+    transaction = await mirian.connect(deployer).transfer(investor1.address, tokens(100000))
+    await transaction.wait()
+    // send castar to investor 2
+    transaction = await castar.connect(deployer).transfer(investor2.address, tokens(100000))
     await transaction.wait()
 
     // Deploy NMN
@@ -157,10 +166,6 @@ describe('NMN', () => {
         // check pool has 100 shares
         result = await nmn.getPoolState(1, 0)
         expect(result.totalShares).to.equal(tokens(100))
-
-        ///// LP adds more liquidity/////////////////
-        // LP approves 
-
       })
 
       it('calculates ratio', async () => {
@@ -223,5 +228,234 @@ describe('NMN', () => {
           .to.be.revertedWithCustomError(nmn, 'ZeroLiquidity')
       })
     })
+  })
+  
+  describe('Handles Swapping', () => {
+    let amount, transaction, result, estimate
+    let pool, check
+    beforeEach(async () => {
+      // Deployer approves 100k from each token
+      amount = tokens(100000)
+
+      transaction = await mirian.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await castar.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await tharni.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await pony.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await penny.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await brass.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await copper.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+
+      // Deployer adds liquidity, 1000 mirian and 4000 castar
+      amount = 1000
+      transaction = await nmn.connect(deployer)
+        .addLiquidity(0, tokens(amount), 1, tokens(amount * 4))
+      await transaction.wait()
+      
+      
+
+      ///// LP adds more liquidity/////////////////
+      // LP approves 500 miran and 2000 castar
+      amount = 500
+      let deposit0 = tokens(amount)
+      transaction = await mirian.connect(liquidityProvider).approve(nmn.address, tokens(amount))
+      await transaction.wait()
+      transaction = await castar.connect(liquidityProvider).approve(nmn.address, tokens(amount * 4))
+      await transaction.wait()
+      // Calculates the amount of castar for 500 mirian
+      let deposit1 = await nmn.calculateLiquidityAmount(0, 1, deposit0)
+      // LP adds liquidity
+      transaction = await nmn.connect(liquidityProvider)
+        .addLiquidity(0, deposit0, 1, deposit1)
+      await transaction.wait()
+
+
+      //Investors aprove all tokens for convinience (usually only approve what is about to be transfered)
+      amount = 100000
+      transaction = await mirian.connect(investor1).approve(nmn.address, tokens(amount))
+      await transaction.wait()
+      transaction = await castar.connect(investor2).approve(nmn.address, tokens(amount))
+      await transaction.wait()
+    })
+
+    describe('Success', async () => {
+      it('emits Swap event', async () => {
+      pool = await nmn.getPoolState(0, 1)
+      // console.log(check.reserve0)
+      // console.log(check.reserve1)
+       // Check investor1 balance before swap
+      balance = await castar.balanceOf(investor1.address)
+      // console.log(`Investor1 castar balance before swap: ${ethers.utils.formatEther(balance)}\n`)
+
+      // Estimate amount of castar ivestor1 will receive after swapping token1: include slippage
+      estimate = await nmn.calculateAmountOut(0, 1, tokens(1))
+      // console.log(`castar amount investor1 will receive after swap: ${ethers.utils.formatEther(estimate.amountOut)}\n`)
+
+      // Investor1 swaps 1 token1
+      transaction = await nmn.connect(investor1).swap(0, 1, tokens(1))
+      result = await transaction.wait()
+      
+
+      check = await nmn.getPoolState(0, 1)
+      
+      let timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+      check = await nmn.getPoolState(0, 1)
+      // console.log(timestamp)
+      
+      await expect(transaction).to.emit(nmn, 'Swap')
+        .withArgs(
+          investor1.address,
+          mirian.address,
+          castar.address,
+          tokens(1),
+          estimate.amountOut,
+          estimate.feeAmount,
+          check.reserve0,
+          check.reserve1,
+          timestamp
+        )
+
+      // // Check investor1 balance after swap
+      balance = await castar.balanceOf(investor1.address)
+      // console.log(`Investor1 castar balance after swap: ${ethers.utils.formatEther(balance)}\n`)
+      expect(estimate.amountOut).to.equal(balance)
+
+      // // Check AMM token balances are in sync
+      expect(await mirian.balanceOf(nmn.address)).to.equal(check.reserve0)
+      expect(await castar.balanceOf(nmn.address)).to.equal(check.reserve1)
+
+      // // Check price after swapping
+      // console.log(`Price: ${check.reserve0 / check.reserve1} \n`)
+      })
+
+      it('swaps reverse order', async () => {
+      pool = await nmn.getPoolState(1, 0)
+     
+      // Check investor1 balance before swap
+      balance = await mirian.balanceOf(investor2.address)
+      // console.log(`investor2 mirian balance before swap: ${ethers.utils.formatEther(balance)}\n`)
+
+      // Estimate amount of mirian ivestor2 will receive after swapping 4 castar, include slippage
+      estimate = await nmn.calculateAmountOut(1, 0, tokens(4))
+      // console.log(`mirian amount investor2 will receive after swap: ${ethers.utils.formatEther(estimate.amountOut)}\n`)
+      // console.log(estimate)
+      // // Investor2 swaps 4 castar
+      transaction = await nmn.connect(investor2).swap(1, 0, tokens(4))
+      result = await transaction.wait()
+      
+      check = await nmn.getPoolState(1, 0)
+      let timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+      // // // console.log(timestamp)
+      await expect(transaction).to.emit(nmn, 'Swap')
+        .withArgs(
+          investor2.address,
+          castar.address,
+          mirian.address,
+          tokens(4),
+          estimate.amountOut,
+          estimate.feeAmount,
+          check.reserve0,
+          check.reserve1,
+          timestamp
+        )
+
+      // Check investor2 balance after swap
+      balance = await mirian.balanceOf(investor2.address)
+      // console.log(`Investor1 castar balance after swap: ${ethers.utils.formatEther(balance)}\n`)
+      expect(estimate.amountOut).to.equal(balance)
+
+      // // // Check AMM token balances are in sync
+      expect(await mirian.balanceOf(nmn.address)).to.equal(check.reserve0)
+      expect(await castar.balanceOf(nmn.address)).to.equal(check.reserve1)
+
+      // // Check price after swapping
+      // console.log(`Price: ${check.reserve0 / check.reserve1} \n`)
+      })
+
+      it('handles multipple iterations', async () => {
+        // Investor1 swaps 1 mirian for castar
+        estimate = await nmn.calculateAmountOut(0, 1, tokens(1))
+        transaction = await nmn.connect(investor1).swap(0, 1, tokens(1))
+        result = await transaction.wait()
+        
+        let timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+        check = await nmn.getPoolState(0, 1)
+        
+        await expect(transaction).to.emit(nmn, 'Swap')
+          .withArgs(
+            investor1.address,
+            mirian.address,
+            castar.address,
+            tokens(1),
+            estimate.amountOut,
+            estimate.feeAmount,
+            check.reserve0,
+            check.reserve1,
+            timestamp
+        )
+
+        // investor2 swaps 4 castar for mirian
+        estimate = await nmn.calculateAmountOut(1, 0, tokens(4))
+        transaction = await nmn.connect(investor2).swap(1, 0, tokens(4))
+        result = await transaction.wait()
+        
+        check = await nmn.getPoolState(1, 0)
+        timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+        // // // console.log(timestamp)
+        await expect(transaction).to.emit(nmn, 'Swap')
+          .withArgs(
+            investor2.address,
+            castar.address,
+            mirian.address,
+            tokens(4),
+            estimate.amountOut,
+            estimate.feeAmount,
+            check.reserve0,
+            check.reserve1,
+            timestamp
+        )
+
+        // Investor1 swaps 100 mirian for castar
+        estimate = await nmn.calculateAmountOut(0, 1, tokens(100))
+        transaction = await nmn.connect(investor1).swap(0, 1, tokens(100))
+        result = await transaction.wait()
+        
+        timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+        check = await nmn.getPoolState(0, 1)
+        
+        await expect(transaction).to.emit(nmn, 'Swap')
+          .withArgs(
+            investor1.address,
+            mirian.address,
+            castar.address,
+            tokens(100),
+            estimate.amountOut,
+            estimate.feeAmount,
+            check.reserve0,
+            check.reserve1,
+            timestamp
+        )
+        // console.log(estimate)
+        // console.log(check)
+      })
+    })
+
+    describe('Failure', async () => {
+      it('Rerverts with ZeroAmount when try to swap zero amount', async () => {
+        await expect(nmn.calculateAmountOut(0, 1, tokens(0)))
+        .to.be.revertedWithCustomError(nmn, 'ZeroAmount')
+      })
+
+      it('Rerverts  when  pool doenst exist', async () => {
+        await expect(nmn.calculateAmountOut(8, 1, tokens(1)))
+        .to.be.reverted
+      })
+    })  
   })
 })
