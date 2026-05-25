@@ -20,7 +20,7 @@ contract NMN is Ownable {
   struct Pool {
     uint256 reserve0;
     uint256 reserve1;
-    uint256 K;
+    uint256 sqrtK;
     uint256 totalShares;
     bool exists;
   }
@@ -76,12 +76,12 @@ contract NMN is Ownable {
   error PoolDoesNotExist();
   error ZeroLiquidity();
   error notEnoughLiquidity();
+  error InvariantViolated();
 
   constructor(Token[] memory _tokens) {
     for (uint i = 0; i < _tokens.length ; i++) {
       tokens.push(_tokens[i]);
     }
-    // pools[Coin(0)][Coin(1)]= Pool(0 ,0, 0, 0, true);
   }
 
   // SORTING FUNCTIONS
@@ -125,6 +125,20 @@ contract NMN is Ownable {
   }
 
   // CALCULATE FUNCTIONS
+
+  function sqrt(uint256 y) internal pure returns (uint256 z) {
+    if (y > 3) {
+      z = y;
+      uint256 x = y / 2 + 1;
+      while (x < z) {
+        z = x;
+        x = (y / x + x) / 2;
+      }
+    } else if (y != 0) {
+      z = 1;
+    }
+    // If y == 0,  returns z = 0
+  }
   
   function calculateLiquidityAmount(Coin _coin0, Coin _coin1,  uint256 _coin0Amount)
     public view returns(uint256 coin1Amount) {
@@ -182,14 +196,12 @@ contract NMN is Ownable {
     feeAmount =  pureAmountOut > amountOut ? pureAmountOut - amountOut : 0;
 
     // Calculate Slippage ( every 100 slippage is 1% lost price  (Spot-Actual)/Spot )
-
     if(spotAmountOut > amountOut) {
       uint256 slippageLoss = spotAmountOut - amountOut;
       slippage = (slippageLoss * 10000) / spotAmountOut;
     } else {
       slippage = 0;
     }
-
   }
 
   function calculateWithdrawAmount(Coin _coin0, Coin _coin1, uint256 _shareAmount)
@@ -208,10 +220,9 @@ contract NMN is Ownable {
       coin0Amount = pool.reserve0;
       coin1Amount = pool.reserve1;
     }
-    
   }
 
-  // POOL FUNCTIONS
+  // POOL & Liquidity functions FUNCTIONS
 
   function initializePool(Coin _coin0, Coin _coin1) external onlyOwner {
     (Coin coin0 ,Coin coin1) = sortCoins(_coin0, _coin1);
@@ -267,7 +278,7 @@ contract NMN is Ownable {
     //  Manage pool
     pool.reserve0 += coin0Amount;
     pool.reserve1 += coin1Amount;
-    pool.K = pool.reserve0 * pool.reserve1;
+    pool.sqrtK = sqrt(pool.reserve0 * pool.reserve1);
     pool.totalShares += sharesToMint;
     userShares[coin0][coin1][msg.sender] += sharesToMint;
 
@@ -306,7 +317,7 @@ contract NMN is Ownable {
 
     pool.reserve0 -= coin0Amount;
     pool.reserve1 -= coin1Amount;
-    pool.K = pool.reserve0 * pool.reserve1;
+    pool.sqrtK = sqrt(pool.reserve0 * pool.reserve1);
 
     // trasfer tokens
     Token token0 = Token(tokens[uint256(coin0)]);
@@ -352,18 +363,30 @@ contract NMN is Ownable {
       tokenIn.transferFrom(msg.sender, address(this), _coinInAmount),
       string(abi.encodePacked("failed to transfer ", tokenIn.name()))
     );
-    
-    // 2. update pool
-    if (_coinIn == coin0) {
-      pool.reserve0 += _coinInAmount;
-      pool.reserve1 -= coinOutAmount;
-    } else {
-      pool.reserve1 += _coinInAmount;
-      pool.reserve0 -= coinOutAmount;
-    }
-    pool.K = pool.reserve0 * pool.reserve1;
 
-    // 3. transfer _coinOut from contract to user wallet
+    // 2. make sure sure sqrtK does not gets smaller
+    uint256 res0 = pool.reserve0;
+    uint256 res1 = pool.reserve1;
+    uint256 sqrtKBefore = pool.sqrtK;
+
+    if (_coinIn == coin0) {
+      res0 += _coinInAmount;
+      unchecked { res1 -= coinOutAmount; }
+    } else {
+      res1 += _coinInAmount;
+      unchecked { res0 -= coinOutAmount; }
+    }
+
+    uint256 sqrtKAfter = sqrt(res0 * res1);
+    if (sqrtKAfter < sqrtKBefore) revert InvariantViolated();
+
+    
+    // 3. update pool
+    pool.reserve0 = res0;
+    pool.reserve1 = res1;
+    pool.sqrtK = sqrtKAfter;
+
+    // 4. transfer _coinOut from contract to user wallet
     require(
       tokenOut.transfer(msg.sender, coinOutAmount),
       string(abi.encodePacked("failed to transfer ", tokenOut.name()))
