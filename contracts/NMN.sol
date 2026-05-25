@@ -1,22 +1,16 @@
-//SPDX-License-Identifier: Unlicense
+//SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 import "./Token.sol";
+import "./Ownable.sol";
 
 // import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract NMN {
+contract NMN is Ownable {
 
   enum Coin { mirian, castar, tharni, pony, penny, brass, copper }
 
-  Token public mirian;
-  Token public castar;
-  Token public tharni;
-  Token public pony;
-  Token public penny;
-  Token public brass;
-  Token public copper;
   Token[] public tokens;
 
   uint256 constant PRECISION = 10**18;
@@ -46,6 +40,37 @@ contract NMN {
     uint256 timestamp
   );
 
+  event PoolInitialized(
+    address indexed token0,
+    address indexed token1
+  );
+
+  event LiquidityAdded(
+    address indexed user,
+    address indexed token0,
+    address indexed token1,
+    uint256 token0AmountAdded,
+    uint256 token1AmountAdded,
+    uint256 shareAmountMinted,
+    uint256 currentReserve0,
+    uint256 currentReserve1,
+    uint256 currentTotalShares,
+    uint256 timestamp
+  );
+
+  event LiquidityRemoved(
+    address indexed user,
+    address indexed token0,
+    address indexed token1,
+    uint256 token0AmountRemoved,
+    uint256 token1AmountRemoved,
+    uint256 shareAmountRemoved,
+    uint256 currentReserve0,
+    uint256 currentReserve1,
+    uint256 currentTotalShares,
+    uint256 timestamp
+  );
+
   error IdenticalTokens();
   error ZeroAmount();
   error PoolDoesNotExist();
@@ -53,21 +78,14 @@ contract NMN {
   error notEnoughLiquidity();
 
   constructor(Token[] memory _tokens) {
-    mirian = _tokens[0];
-    castar = _tokens[1];
-    tharni = _tokens[2];
-    pony = _tokens[3];
-    penny = _tokens[4];
-    brass = _tokens[5];
-    copper = _tokens[6];
-
-    for (uint i = 0; i <= 6 ; i++) {
+    for (uint i = 0; i < _tokens.length ; i++) {
       tokens.push(_tokens[i]);
     }
-    pools[Coin.mirian][Coin.castar]= Pool(0 ,0, 0, 0, true);
+    // pools[Coin(0)][Coin(1)]= Pool(0 ,0, 0, 0, true);
   }
 
-  // sorting functions
+  // SORTING FUNCTIONS
+
   function sortCoins( Coin _coin0, Coin _coin1)
     public pure returns (Coin coin0, Coin coin1)
   {
@@ -89,6 +107,8 @@ contract NMN {
     }
   }
 
+  // VIEW FUNCTIONS
+
   function getUserShares(Coin _coin0 , Coin _coin1, address user) 
     public view returns(uint256)
   {
@@ -103,6 +123,8 @@ contract NMN {
   
     return (pools[coin0][coin1]);
   }
+
+  // CALCULATE FUNCTIONS
   
   function calculateLiquidityAmount(Coin _coin0, Coin _coin1,  uint256 _coin0Amount)
     public view returns(uint256 coin1Amount) {
@@ -121,52 +143,6 @@ contract NMN {
     }
   }
 
-  function addLiquidity(Coin _coin0, uint256 _coin0Amount, Coin _coin1, uint256 _coin1Amount)
-    external{
-    // sort everything
-    (
-      Coin coin0, Coin coin1, uint256 coin0Amount, uint256 coin1Amount
-    ) = sortCoinsAndAmounts(_coin0, _coin1 , _coin0Amount, _coin1Amount);
-
-    Token token0 = Token(tokens[uint256(coin0)]);
-    Token token1 = Token(tokens[uint256(coin1)]);
-
-    // Deposit Tokens
-    require(
-      token0.transferFrom(msg.sender, address(this), coin0Amount),
-      string(abi.encodePacked("failed to transfer ", token0.name()))
-    );
-    require(
-      token1.transferFrom(msg.sender, address(this), coin1Amount),
-      string(abi.encodePacked("failed to transfer ", token1.name()))
-    );
-
-    Pool storage pool = pools[coin0][coin1];
-
-    //Calculate shares to mMint
-    uint256 sharesToMint;
-    if (pool.totalShares != 0) {
-      uint256 share1 = (pool.totalShares * coin0Amount) / pool.reserve0;
-      uint256 share2 = (pool.totalShares * coin1Amount) / pool.reserve1;
-      require(
-        (share1 / 10**3) == (share2 / 10**3),
-        "must provide equal token amounts"
-      );
-      sharesToMint = share1;
-    } else {
-      sharesToMint = 100 * PRECISION;
-    }
-
-    //  Manage pool
-    pool.reserve0 += coin0Amount;
-    pool.reserve1 += coin1Amount;
-    pool.K = pool.reserve0 * pool.reserve1;
-    pool.totalShares += sharesToMint;
-    userShares[coin0][coin1][msg.sender] += sharesToMint;
-
-  }
-
-  
   function calculateAmountOut(Coin _coinIn, Coin _coinOut, uint256 _amountIn)
     public view returns (uint256 amountOut, uint256 feeAmount, uint256 slippage)
   {
@@ -216,6 +192,147 @@ contract NMN {
 
   }
 
+  function calculateWithdrawAmount(Coin _coin0, Coin _coin1, uint256 _shareAmount)
+  public view returns(uint256 coin0Amount, uint256 coin1Amount)
+  {
+    (Coin coin0, Coin coin1) = sortCoins(_coin0, _coin1);
+    Pool storage pool = pools[coin0][coin1];
+
+    require (_shareAmount <= pool.totalShares,
+    "Amount of share to be removed must be less than totalshares");
+
+    if (_shareAmount != pool.totalShares) {
+      coin0Amount = (_shareAmount * pool.reserve0) / pool.totalShares;
+      coin1Amount = (_shareAmount * pool.reserve1) / pool.totalShares;
+    } else {
+      coin0Amount = pool.reserve0;
+      coin1Amount = pool.reserve1;
+    }
+    
+  }
+
+  // POOL FUNCTIONS
+
+  function initializePool(Coin _coin0, Coin _coin1) external onlyOwner {
+    (Coin coin0 ,Coin coin1) = sortCoins(_coin0, _coin1);
+
+    Pool storage pool = pools[coin0][coin1];
+    require(!pool.exists, "Pool already registered");
+
+    pool.exists = true;
+
+    Token token0 = Token(tokens[uint256(coin0)]);
+    Token token1 = Token(tokens[uint256(coin1)]);
+    emit PoolInitialized(address(token0), address(token1));
+  }
+
+
+  function addLiquidity(Coin _coin0, uint256 _coin0Amount, Coin _coin1, uint256 _coin1Amount)
+    external
+  {
+    // sort everything
+    (
+      Coin coin0, Coin coin1, uint256 coin0Amount, uint256 coin1Amount
+    ) = sortCoinsAndAmounts(_coin0, _coin1 , _coin0Amount, _coin1Amount);
+
+    Token token0 = Token(tokens[uint256(coin0)]);
+    Token token1 = Token(tokens[uint256(coin1)]);
+
+    // Deposit Tokens
+    require(
+      token0.transferFrom(msg.sender, address(this), coin0Amount),
+      string(abi.encodePacked("failed to transfer ", token0.name()))
+    );
+    require(
+      token1.transferFrom(msg.sender, address(this), coin1Amount),
+      string(abi.encodePacked("failed to transfer ", token1.name()))
+    );
+
+    Pool storage pool = pools[coin0][coin1];
+
+    //Calculate shares to Mint
+    uint256 sharesToMint;
+    if (pool.totalShares != 0) {
+      uint256 share1 = (pool.totalShares * coin0Amount) / pool.reserve0;
+      uint256 share2 = (pool.totalShares * coin1Amount) / pool.reserve1;
+      require(
+        (share1 / 10**3) == (share2 / 10**3),
+        "must provide equal token amounts"
+      );
+      sharesToMint = share1;
+    } else {
+      sharesToMint = 100 * PRECISION;
+    }
+
+    //  Manage pool
+    pool.reserve0 += coin0Amount;
+    pool.reserve1 += coin1Amount;
+    pool.K = pool.reserve0 * pool.reserve1;
+    pool.totalShares += sharesToMint;
+    userShares[coin0][coin1][msg.sender] += sharesToMint;
+
+    emit LiquidityAdded(
+      msg.sender,
+      address(token0),
+      address(token1),
+      coin0Amount,
+      coin1Amount,
+      sharesToMint,
+      pool.reserve0,
+      pool.reserve1,
+      pool.totalShares,
+      block.timestamp
+    );
+  }
+
+  function removeLiquidity(Coin _coin0, Coin _coin1, uint256 _shareAmount)
+    external returns(uint256 coin0Amount, uint256 coin1Amount)
+  {
+    
+    (Coin coin0, Coin coin1) = sortCoins(_coin0, _coin1);
+    require(
+      _shareAmount <= userShares[coin0][coin1][msg.sender],
+      "Cannot withdraw more shares than you own"
+    );
+    
+    (coin0Amount, coin1Amount) = calculateWithdrawAmount( coin0, coin1, _shareAmount);
+    
+    // updates user shares
+    userShares[coin0][coin1][msg.sender] -= _shareAmount;
+
+    //update pool
+    Pool storage pool = pools[coin0][coin1];
+    pool.totalShares -= _shareAmount;
+
+    pool.reserve0 -= coin0Amount;
+    pool.reserve1 -= coin1Amount;
+    pool.K = pool.reserve0 * pool.reserve1;
+
+    // trasfer tokens
+    Token token0 = Token(tokens[uint256(coin0)]);
+    Token token1 = Token(tokens[uint256(coin1)]);
+
+    require(token0.transfer(msg.sender, coin0Amount),
+    string(abi.encodePacked("failed to transfer ", token0.name())));
+    require(token1.transfer(msg.sender, coin1Amount),
+    string(abi.encodePacked("failed to transfer ", token1.name())));
+
+    emit LiquidityRemoved(
+      msg.sender,
+      address(token0),
+      address(token1),
+      coin0Amount,
+      coin1Amount,
+      _shareAmount,
+      pool.reserve0,
+      pool.reserve1,
+      pool.totalShares,
+      block.timestamp
+    );
+  }
+
+  // SWAP FUNCTION
+
   function swap(Coin _coinIn, Coin _coinOut, uint256 _coinInAmount)
     external returns(uint256 coinOutAmount) 
   {
@@ -261,6 +378,7 @@ contract NMN {
       feeAmount,
       pool.reserve0,
       pool.reserve1,
-      block.timestamp);
+      block.timestamp
+    );
   }
 }

@@ -72,6 +72,9 @@ describe('NMN', () => {
     // Deploy NMN
     const NMN = await ethers.getContractFactory('NMN')
     nmn = await NMN.deploy(tokenAddresses)
+
+    // Initialize 1 pool
+    transaction = await nmn.connect(deployer).initializePool(0, 1)
   })
 
   describe('Deployment', () => {
@@ -87,6 +90,25 @@ describe('NMN', () => {
 
   })
 
+  describe('Initialize Pool', () => {
+    describe('Success', async () => {
+      it('Emits PoolInitialized event', async () => {
+        transaction = await nmn.connect(deployer).initializePool(0, 2)
+        await expect(transaction).to.emit(nmn, 'PoolInitialized')
+        .withArgs(mirian.address, tharni.address)
+      })
+    })
+
+    describe('Failure', async () => {
+      it('fails to initialize if already exists', async () => {
+      await expect(nmn.connect(deployer).initializePool(0, 1)).to.be.reverted
+      })
+
+      it('does not let non owner to initialize', async () => {
+      await expect(nmn.connect(liquidityProvider).initializePool(0, 2)).to.be.reverted
+      })
+    })
+  })
   describe('Adding liquidity', () => {
     let amount, transaction, result
     beforeEach(async () => {
@@ -201,6 +223,31 @@ describe('NMN', () => {
         result = await nmn.getPoolState(1, 0)
         expect(result.totalShares).to.equal(tokens(150))
       })
+
+      it('Emits LiquidityAdded event', async () => {
+        // Deployer adds liquidity, 1000 mirian and 4000 castar
+        amount = 1000
+        transaction = await nmn.connect(deployer)
+          .addLiquidity(0, tokens(amount), 1, tokens(amount * 4))
+        await transaction.wait()
+
+        timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+        let check = await nmn.getPoolState(0, 1)
+        await expect(transaction).to.emit(nmn, 'LiquidityAdded')
+        .withArgs(
+          deployer.address,
+          mirian.address,
+          castar.address,
+          tokens(amount),
+          tokens(amount * 4),
+          tokens(100),
+          check.reserve0,
+          check.reserve1,
+          check.totalShares,
+          timestamp
+        )
+        
+      })
     })
 
     describe('Failure', async () => {
@@ -230,8 +277,8 @@ describe('NMN', () => {
     })
   })
   
-  describe('Handles Swapping', () => {
-    let amount, transaction, result, estimate
+  describe('Handling Swapping', () => {
+    let amount0, amount1, transaction, result, estimate
     let pool, check
     beforeEach(async () => {
       // Deployer approves 100k from each token
@@ -258,8 +305,6 @@ describe('NMN', () => {
         .addLiquidity(0, tokens(amount), 1, tokens(amount * 4))
       await transaction.wait()
       
-      
-
       ///// LP adds more liquidity/////////////////
       // LP approves 500 miran and 2000 castar
       amount = 500
@@ -457,5 +502,85 @@ describe('NMN', () => {
         .to.be.reverted
       })
     })  
+  })
+
+  describe('Removing Liquidity', () => {
+    let amount, transaction, result, estimate
+    let pool, check
+    beforeEach(async () => {
+      // Deployer approves 100k from each token
+      amount = tokens(100000)
+
+      transaction = await mirian.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await castar.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await tharni.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await pony.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await penny.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await brass.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+      transaction = await copper.connect(deployer).approve(nmn.address, amount)
+      await transaction.wait()
+
+      // Deployer adds liquidity, 1000 mirian and 4000 castar
+      amount = 1000
+      transaction = await nmn.connect(deployer)
+        .addLiquidity(0, tokens(amount), 1, tokens(amount * 4))
+      await transaction.wait()
+      
+      ///// LP adds more liquidity/////////////////
+      // LP approves 500 miran and 2000 castar
+      amount = 500
+      let deposit0 = tokens(amount)
+      transaction = await mirian.connect(liquidityProvider).approve(nmn.address, tokens(amount))
+      await transaction.wait()
+      transaction = await castar.connect(liquidityProvider).approve(nmn.address, tokens(amount * 4))
+      await transaction.wait()
+      // Calculates the amount of castar for 500 mirian
+      let deposit1 = await nmn.calculateLiquidityAmount(0, 1, deposit0)
+      // LP adds liquidity
+      transaction = await nmn.connect(liquidityProvider)
+        .addLiquidity(0, deposit0, 1, deposit1)
+      await transaction.wait()
+    })
+    
+    describe('Success', async () => {
+      it('emits LiquidityRemoved event', async () => {
+        amount = tokens(20)
+        estimate = await nmn.calculateWithdrawAmount(0, 1, amount)
+
+        transaction = await nmn.connect(liquidityProvider).removeLiquidity(0, 1, amount)
+        result = await transaction.wait()
+
+        timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+        check = await nmn.getPoolState(0, 1)
+        await expect(transaction).to.emit(nmn, 'LiquidityRemoved')
+        .withArgs(
+          liquidityProvider.address,
+          mirian.address,
+          castar.address,
+          estimate.coin0Amount,
+          estimate.coin1Amount,
+          amount,
+          check.reserve0,
+          check.reserve1,
+          check.totalShares,
+          timestamp
+        )
+      })
+    })
+
+    describe('Failure', async () => {
+      it('reverts when trying to remove more shares than owned', async () => {
+        amount = tokens(60)
+        estimate = await nmn.calculateWithdrawAmount(0, 1, amount)
+        await expect(nmn.connect(liquidityProvider).removeLiquidity(0, 1, amount))
+        .to.be.revertedWith("Cannot withdraw more shares than you own")
+      })
+    })
   })
 })
