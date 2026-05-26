@@ -37,7 +37,7 @@ async function main() {
     deployedTokenAddresses.push(token.address);
   }
 
-  console.log("\nAll tokens deployed successfully. Initializing NMN AMM...\n");
+  console.log("\nAll tokens deployed successfully. Initializing NMN ...\n");
 
   // Deploy NMN contract with the array of deployed token addresses
   const NMN = await hre.ethers.getContractFactory("NMN");
