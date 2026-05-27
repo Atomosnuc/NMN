@@ -6,30 +6,31 @@ import {
   setAccount
 } from './reducers/provider'
 
-// import {
-//   setContracts,
-//   setSymbols,
-//   balancesLoaded
-// } from './reducers/tokens'
+import {
+  setContracts,
+  setSymbols,
+  tokenBalanceLoaded
+} from './reducers/tokens'
 
-// import {
-//   setContract,
-//   sharesLoaded,
-//   swapsLoaded,
-//   depositRequest,
-//   depositSuccess,
-//   depositFail,
-//   withdrawRequest,
-//   withdrawSuccess,
-//   withdrawFail,
-//   swapRequest,
-//   swapSuccess,
-//   swapFail
-// } from './reducers/amm'
+import {
+  setContract,
+  poolStateLoaded,
+  poolSharesLoaded,
+  swapsLoaded,
+  depositRequest,
+  depositSuccess,
+  depositFail,
+  withdrawRequest,
+  withdrawSuccess,
+  withdrawFail,
+  swapRequest,
+  swapSuccess,
+  swapFail
+} from './reducers/nmn'
 
-import TOKEN_ABI from '../abis/Token.json';
-// import AMM_ABI from '../abis/AMM.json';
-import config from '../config.json';
+import TOKEN_ABI from '../abis/Token.json'
+import NMN_ABI from '../abis/NMN.json'
+import config from '../config.json'
 
 export const loadProvider = (dispatch) => {
   const provider = new ethers.providers.Web3Provider(window.ethereum)
@@ -54,43 +55,80 @@ export const loadAccount = async (dispatch) => {
 }
 
 // // ------------------------------------------------------------------------------
-// // LOAD CONTRACTS
-// export const loadTokens = async (provider, chainId, dispatch) => {
-//   const dapp = new ethers.Contract(config[chainId].dapp.address, TOKEN_ABI, provider)
-//   const usd = new ethers.Contract(config[chainId].usd.address, TOKEN_ABI, provider)
+// LOAD CONTRACTS
+// LOAD ALL 7 TOKENS VIA CONFIG
+export const loadTokens = async (provider, chainId, dispatch) => {
+  const coinKeys = ["mirian", "castar", "tharni", "pony", "penny", "brass", "copper"]
+  const contracts = []
+  const symbols = []
 
-//   dispatch(setContracts([dapp, usd]))
-//   dispatch(setSymbols([await dapp.symbol(), await usd.symbol()]))
-// }
+  for (const key of coinKeys) {
+    const address = config[chainId][key].address
+    const contract = new ethers.Contract(address, TOKEN_ABI, provider)
+    contracts.push(contract);
+    symbols.push(await contract.symbol())
+  }
 
-// export const loadAMM = async (provider, chainId, dispatch) => {
-//   const amm = new ethers.Contract(config[chainId].amm.address, AMM_ABI, provider)
+  dispatch(setContracts(contracts))
+  dispatch(setSymbols(symbols))
+  return contracts
+};
 
-//   dispatch(setContract(amm))
-
-//   return amm
-// }
-
+export const loadNMN = async (provider, chainId, dispatch) => {
+  const nmn = new ethers.Contract(config[chainId].nmn.address, NMN_ABI, provider)
+  dispatch(setContract(nmn))
+  return nmn
+};
 
 // // ------------------------------------------------------------------------------
 // // LOAD BALANCES & SHARES
-// export const loadBalances = async (amm, tokens, account, dispatch) => {
-//   const balance1 = await tokens[0].balanceOf(account)
-//   const balance2 = await tokens[1].balanceOf(account)
+// LOAD MULTI-POOL BALANCES, RESERVES, AND SHARES
+export const loadAllPoolsAndBalances = async (amm, tokens, account, dispatch) => {
+  // 1. Fetch wallet balances for all 7 tokens
+  for (const token of tokens) {
+    const rawBalance = await token.balanceOf(account);
+    dispatch(tokenBalanceLoaded({
+      tokenAddress: token.address,
+      balance: ethers.utils.formatUnits(rawBalance, 'ether')
+    }));
+  }
 
-//   dispatch(balancesLoaded([
-//     ethers.utils.formatUnits(balance1.toString(), 'ether'),
-//     ethers.utils.formatUnits(balance2.toString(), 'ether')
-//   ]))
+  // 2. Query configurations for every unique pool combination matrix
+  const totalCoins = tokens.length;
+  for (let i = 0; i < totalCoins; i++) {
+    for (let j = i + 1; j < totalCoins; j++) {
+      try {
+        const pool = await amm.getPoolState(i, j);
+        
+        dispatch(poolStateLoaded({
+          coin0: i,
+          coin1: j,
+          reserve0: ethers.utils.formatUnits(pool.reserve0, 'ether'),
+          reserve1: ethers.utils.formatUnits(pool.reserve1, 'ether'),
+          totalShares: ethers.utils.formatUnits(pool.totalShares, 'ether'),
+          exists: pool.exists
+        }));
 
-//   const shares = await amm.shares(account)
-//   dispatch(sharesLoaded(ethers.utils.formatUnits(shares.toString(), 'ether')))
-// }
+        if (account && pool.exists) {
+          const shares = await amm.getUserShares(i, j, account);
+          dispatch(poolSharesLoaded({
+            coin0: i,
+            coin1: j,
+            shares: ethers.utils.formatUnits(shares, 'ether')
+          }));
+        }
+      } catch (error) {
+        console.error(`Failed to map tracking metrics on pool iteration ${i}-${j}:`, error);
+      }
+    }
+  }
+};
+
 
 
 // // ------------------------------------------------------------------------------
 // // ADD LIQUDITY
-// export const addLiquidity = async (provider, amm, tokens, amounts, dispatch) => {
+// export const addLiquidity = async (provider, nmn, tokens, amounts, dispatch) => {
 //   try {
 //     dispatch(depositRequest())
 
@@ -98,13 +136,13 @@ export const loadAccount = async (dispatch) => {
 
 //     let transaction
 
-//     transaction = await tokens[0].connect(signer).approve(amm.address, amounts[0])
+//     transaction = await tokens[0].connect(signer).approve(nmn.address, amounts[0])
 //     await transaction.wait()
 
-//     transaction = await tokens[1].connect(signer).approve(amm.address, amounts[1])
+//     transaction = await tokens[1].connect(signer).approve(nmn.address, amounts[1])
 //     await transaction.wait()
 
-//     transaction = await amm.connect(signer).addLiquidity(amounts[0], amounts[1])
+//     transaction = await nmn.connect(signer).addLiquidity(amounts[0], amounts[1])
 //     await transaction.wait()
 
 //     dispatch(depositSuccess(transaction.hash))
@@ -115,13 +153,13 @@ export const loadAccount = async (dispatch) => {
 
 // // ------------------------------------------------------------------------------
 // // REMOVE LIQUDITY
-// export const removeLiquidity = async (provider, amm, shares, dispatch) => {
+// export const removeLiquidity = async (provider, nmn, shares, dispatch) => {
 //   try {
 //     dispatch(withdrawRequest())
 
 //     const signer = await provider.getSigner()
 
-//     let transaction = await amm.connect(signer).removeLiquidity(shares)
+//     let transaction = await nmn.connect(signer).removeLiquidity(shares)
 //     await transaction.wait()
 
 //     dispatch(withdrawSuccess(transaction.hash))
@@ -133,7 +171,7 @@ export const loadAccount = async (dispatch) => {
 // // ------------------------------------------------------------------------------
 // // SWAP
 
-// export const swap = async (provider, amm, token, symbol, amount, dispatch) => {
+// export const swap = async (provider, nmn, token, symbol, amount, dispatch) => {
 //   try {
 
 //     dispatch(swapRequest())
@@ -142,13 +180,13 @@ export const loadAccount = async (dispatch) => {
 
 //     const signer = await provider.getSigner()
 
-//     transaction = await token.connect(signer).approve(amm.address, amount)
+//     transaction = await token.connect(signer).approve(nmn.address, amount)
 //     await transaction.wait()
 
 //     if (symbol === "DAPP") {
-//       transaction = await amm.connect(signer).swapToken1(amount)
+//       transaction = await nmn.connect(signer).swapToken1(amount)
 //     } else {
-//       transaction = await amm.connect(signer).swapToken2(amount)
+//       transaction = await nmn.connect(signer).swapToken2(amount)
 //     }
 
 //     await transaction.wait()
@@ -164,12 +202,12 @@ export const loadAccount = async (dispatch) => {
 // // ------------------------------------------------------------------------------
 // // LOAD ALL SWAPS
 
-// export const loadAllSwaps = async (provider, amm, dispatch) => {
+// export const loadAllSwaps = async (provider, nmn, dispatch) => {
 //   const block = await provider.getBlockNumber()
 //   const { chainId } = await provider.getNetwork()
-//   const fromBlock = config[chainId]?.amm?.deployBlock ?? 0
+//   const fromBlock = config[chainId]?.nmn?.deployBlock ?? 0
 
-//   const swapStream = await amm.queryFilter('Swap', fromBlock, block)
+//   const swapStream = await nmn.queryFilter('Swap', fromBlock, block)
 //   console.log(swapStream)
 //   const swaps = swapStream.map(event => {
 //     return { hash: event.transactionHash, args: event.args }
