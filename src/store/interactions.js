@@ -83,7 +83,7 @@ export const loadNMN = async (provider, chainId, dispatch) => {
 // // ------------------------------------------------------------------------------
 // // LOAD BALANCES & SHARES
 // LOAD MULTI-POOL BALANCES, RESERVES, AND SHARES
-export const loadAllPoolsAndBalances = async (amm, tokens, account, dispatch) => {
+export const loadAllPoolsAndBalances = async (nmn, tokens, account, dispatch) => {
   // 1. Fetch wallet balances for all 7 tokens
   for (const token of tokens) {
     const rawBalance = await token.balanceOf(account);
@@ -98,7 +98,7 @@ export const loadAllPoolsAndBalances = async (amm, tokens, account, dispatch) =>
   for (let i = 0; i < totalCoins; i++) {
     for (let j = i + 1; j < totalCoins; j++) {
       try {
-        const pool = await amm.getPoolState(i, j);
+        const pool = await nmn.getPoolState(i, j);
         
         dispatch(poolStateLoaded({
           coin0: i,
@@ -110,7 +110,7 @@ export const loadAllPoolsAndBalances = async (amm, tokens, account, dispatch) =>
         }));
 
         if (account && pool.exists) {
-          const shares = await amm.getUserShares(i, j, account);
+          const shares = await nmn.getUserShares(i, j, account);
           dispatch(poolSharesLoaded({
             coin0: i,
             coin1: j,
@@ -127,91 +127,92 @@ export const loadAllPoolsAndBalances = async (amm, tokens, account, dispatch) =>
 
 
 // // ------------------------------------------------------------------------------
-// // ADD LIQUDITY
-// export const addLiquidity = async (provider, nmn, tokens, amounts, dispatch) => {
-//   try {
-//     dispatch(depositRequest())
+// // ADD LIQUDITY 
+export const addLiquidity = async (provider, nmn, token0Contract, token1Contract, coinIndex0, amount0, coinIndex1, amount1, dispatch) => {
+  try {
+    dispatch(depositRequest());
+    const signer = await provider.getSigner();
+    // Formats numbers to BigNumbers
+    const parsedAmount0 = ethers.utils.parseUnits(amount0.toString(), 'ether');
+    const parsedAmount1 = ethers.utils.parseUnits(amount1.toString(), 'ether');
+    // Approves amounts
+    let tx;
+    tx = await token0Contract.connect(signer).approve(nmn.address, parsedAmount0);
+    await tx.wait();
+    tx = await token1Contract.connect(signer).approve(nmn.address, parsedAmount1);
+    await tx.wait();
 
-//     const signer = await provider.getSigner()
+    // Calls addLiquidity
+    tx = await nmn.connect(signer).addLiquidity(coinIndex0, parsedAmount0, coinIndex1, parsedAmount1);
+    await tx.wait();
 
-//     let transaction
+    dispatch(depositSuccess(tx.hash));
+  } catch (error) {
+    console.error(error);
+    dispatch(depositFail());
+  }
+}
 
-//     transaction = await tokens[0].connect(signer).approve(nmn.address, amounts[0])
-//     await transaction.wait()
-
-//     transaction = await tokens[1].connect(signer).approve(nmn.address, amounts[1])
-//     await transaction.wait()
-
-//     transaction = await nmn.connect(signer).addLiquidity(amounts[0], amounts[1])
-//     await transaction.wait()
-
-//     dispatch(depositSuccess(transaction.hash))
-//   } catch (error) {
-//     dispatch(depositFail())
-//   }
-// }
 
 // // ------------------------------------------------------------------------------
 // // REMOVE LIQUDITY
-// export const removeLiquidity = async (provider, nmn, shares, dispatch) => {
-//   try {
-//     dispatch(withdrawRequest())
+export const removeLiquidity = async (provider, nmn, coinIndex0, coinIndex1, sharesAmount, dispatch) => {
+  try {
+    dispatch(withdrawRequest());
+    const signer = await provider.getSigner();
+    // Formats to BigNumbers
+    const parsedShares = ethers.utils.parseUnits(sharesAmount.toString(), 'ether');
 
-//     const signer = await provider.getSigner()
+    // Calls removeLiquidity
+    const tx = await nmn.connect(signer).removeLiquidity(coinIndex0, coinIndex1, parsedShares);
+    await tx.wait();
 
-//     let transaction = await nmn.connect(signer).removeLiquidity(shares)
-//     await transaction.wait()
+    dispatch(withdrawSuccess(tx.hash));
+  } catch (error) {
+    console.error(error);
+    dispatch(withdrawFail());
+  }
+}
 
-//     dispatch(withdrawSuccess(transaction.hash))
-//   } catch (error) {
-//     dispatch(withdrawFail())
-//   }
-// }
 
 // // ------------------------------------------------------------------------------
 // // SWAP
+export const executeSwap = async (provider, nmn, tokenInContract, coinIndexIn, coinIndexOut, amountIn, dispatch) => {
+  try {
+    dispatch(swapRequest());
+    const signer = await provider.getSigner();
+    const parsedAmountIn = ethers.utils.parseUnits(amountIn.toString(), 'ether');
 
-// export const swap = async (provider, nmn, token, symbol, amount, dispatch) => {
-//   try {
+    let tx = await tokenInContract.connect(signer).approve(nmn.address, parsedAmountIn);
+    await tx.wait();
 
-//     dispatch(swapRequest())
+    // Call your standardized unified contract logic: swap(coinIn, coinOut, amountIn)
+    tx = await nmn.connect(signer).swap(coinIndexIn, coinIndexOut, parsedAmountIn);
+    await tx.wait();
 
-//     let transaction
+    dispatch(swapSuccess(tx.hash));
+  } catch (error) {
+    console.error(error);
+    dispatch(swapFail());
+  }
+}
 
-//     const signer = await provider.getSigner()
-
-//     transaction = await token.connect(signer).approve(nmn.address, amount)
-//     await transaction.wait()
-
-//     if (symbol === "DAPP") {
-//       transaction = await nmn.connect(signer).swapToken1(amount)
-//     } else {
-//       transaction = await nmn.connect(signer).swapToken2(amount)
-//     }
-
-//     await transaction.wait()
-
-//     dispatch(swapSuccess(transaction.hash))
-
-//   } catch (error) {
-//     dispatch(swapFail())
-//   }
-// }
 
 
 // // ------------------------------------------------------------------------------
 // // LOAD ALL SWAPS
 
-// export const loadAllSwaps = async (provider, nmn, dispatch) => {
-//   const block = await provider.getBlockNumber()
-//   const { chainId } = await provider.getNetwork()
-//   const fromBlock = config[chainId]?.nmn?.deployBlock ?? 0
+export const loadAllSwaps = async (provider, nmn, dispatch) => {
+  const block = await provider.getBlockNumber();
+  const { chainId } = await provider.getNetwork();
+  const fromBlock = config[chainId]?.nmn?.deployBlock ?? 0;
 
-//   const swapStream = await nmn.queryFilter('Swap', fromBlock, block)
-//   console.log(swapStream)
-//   const swaps = swapStream.map(event => {
-//     return { hash: event.transactionHash, args: event.args }
-//   })
+  const swapStream = await nmn.queryFilter('Swap', fromBlock, block);
+  const swaps = swapStream.map(event => ({
+    hash: event.transactionHash,
+    args: event.args
+  }));
 
-//   dispatch(swapsLoaded(swaps))
-// }
+  dispatch(swapsLoaded(swaps));
+
+}

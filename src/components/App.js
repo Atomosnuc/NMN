@@ -74,16 +74,20 @@ function App() {
     loadBlockchainData()
   },[dispatch] );
 
-  return(
+  return (
     <Container>
+      <HashRouter>
 
-        <Navigation account={account}/>
+        <Navigation />
 
-        <hr />
+        <hr/>
 
-       
+        
 
-     
+        <Routes>
+         
+        </Routes>
+      </HashRouter>
     </Container>
   )
 }
