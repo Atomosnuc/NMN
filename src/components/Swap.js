@@ -36,7 +36,7 @@ const Swap = () => {
   const symbols = useSelector(state => state.tokens.symbols)
   const balances = useSelector(state => state.tokens.balances)
 
-  const amm = useSelector(state => state.nmn.contract)
+  const nmn = useSelector(state => state.nmn.contract)
   const poolData = useSelector(state => state.nmn.poolData)
   const isSwapping = useSelector(state => state.nmn.swapping.isSwapping)
   const isSuccess = useSelector(state => state.nmn.swapping.isSuccess)
@@ -57,7 +57,7 @@ const Swap = () => {
 
   try {
     const parsedAmount = ethers.utils.parseUnits(targetAmount, 'ether')
-    const result = await amm.calculateAmountOut(targetInputIndex, targetOutputIndex, parsedAmount)
+    const result = await nmn.calculateAmountOut(targetInputIndex, targetOutputIndex, parsedAmount)
     
     setOutputAmount(ethers.utils.formatUnits(result.amountOut, 'ether'))
     setEstimatedFee(ethers.utils.formatUnits(result.feeAmount, 'ether'))
@@ -65,7 +65,7 @@ const Swap = () => {
     const formattedSlippage = (Number(result.slippage.toString()) / 100).toFixed(2)
     setEstimatedSlippage(formattedSlippage)
   } catch (error) {
-    console.error("AMM calculation failed:", error)
+    console.error("Calculation failed:", error)
     setOutputAmount('0')
     setEstimatedFee('0')
     setEstimatedSlippage('0')
@@ -97,7 +97,7 @@ const switchTokens = () => {
 
     await executeSwap(
       provider,
-      amm,
+      nmn,
       tokens[inputIndex],
       inputIndex,
       outputIndex,
@@ -105,7 +105,7 @@ const switchTokens = () => {
       dispatch
     )
 
-    await loadAllPoolsAndBalances(amm, tokens, account, dispatch)
+    await loadAllPoolsAndBalances(nmn, tokens, account, dispatch)
     
     setInputAmount('')
     setOutputAmount('')
@@ -140,10 +140,10 @@ const switchTokens = () => {
   updatePrice()
 
   // 2. Fetch live fee/slippage quote from your smart contract
-  if (amm && inputIndex !== null && outputIndex !== null) {
+  if (nmn && inputIndex !== null && outputIndex !== null) {
     fetchLiveQuote(inputIndex, outputIndex, inputAmount)
   }
-}, [inputIndex, outputIndex, inputAmount, poolData, amm])
+}, [inputIndex, outputIndex, inputAmount, poolData, nmn])
 
   const getInputBalance = () => {
     if (inputIndex === null || !tokens[inputIndex]) return '0'
@@ -215,8 +215,8 @@ const switchTokens = () => {
                 disabled={inputIndex === null && outputIndex === null}
                 className="rounded-circle shadow-sm border border-light p-2 d-flex align-items-center justify-content-center"
                 style={{ 
-                  width: '40px', 
-                  height: '40px', 
+                  width: '50px', 
+                  height: '50px', 
                   marginTop: '-15px', 
                   marginBottom: '-15px',
                   transition: 'transform 0.2s ease'
