@@ -17,7 +17,6 @@ import { removeLiquidity, loadAllPoolsAndBalances } from '../store/interactions'
 const Withdraw = () => {
   const dispatch = useDispatch()
 
-  // Track chosen token indices to form the targeted pool matrix
   const [tokenIndex0, setTokenIndex0] = useState(null)
   const [tokenIndex1, setTokenIndex1] = useState(null)
 
@@ -32,7 +31,7 @@ const Withdraw = () => {
   const tokens = useSelector(state => state.tokens.contracts)
   const symbols = useSelector(state => state.tokens.symbols)
 
-  const amm = useSelector(state => state.nmn.contract)
+  const nmn = useSelector(state => state.nmn.contract)
   const poolData = useSelector(state => state.nmn.poolData)
   const isWithdrawing = useSelector(state => state.nmn.withdrawing.isWithdrawing)
   const isSuccess = useSelector(state => state.nmn.withdrawing.isSuccess)
@@ -56,7 +55,7 @@ const Withdraw = () => {
 
       try {
         const parsedShares = ethers.utils.parseUnits(amount.toString(), 'ether')
-        const results = await amm.calculateWithdrawAmount(tokenIndex0, tokenIndex1, parsedShares)
+        const results = await nmn.calculateWithdrawAmount(tokenIndex0, tokenIndex1, parsedShares)
         
         setEstToken0(ethers.utils.formatUnits(results.coin0Amount, 'ether'))
         setEstToken1(ethers.utils.formatUnits(results.coin1Amount, 'ether'))
@@ -68,7 +67,7 @@ const Withdraw = () => {
     }
 
     fetchEstimates()
-  }, [amount, tokenIndex0, tokenIndex1, amm])
+  }, [amount, tokenIndex0, tokenIndex1, nmn])
 
   const withdrawHandler = async (e) => {
     e.preventDefault()
@@ -79,20 +78,30 @@ const Withdraw = () => {
       return
     }
 
-    // Call updated interaction signature
     await removeLiquidity(
       provider,
-      amm,
+      nmn,
       tokenIndex0,
       tokenIndex1,
       amount,
       dispatch
     )
 
-    await loadAllPoolsAndBalances(amm, tokens, account, dispatch)
+    await loadAllPoolsAndBalances(nmn, tokens, account, dispatch)
     
     setShowAlert(true)
     setAmount('')
+  }
+
+  // --- SAFETY VALIDATION ENGINE ---
+  const availableShares = Number(getActivePoolShares())
+  const typedShares = Number(amount)
+  const isInsufficientShares = typedShares > availableShares
+
+  // Determine button text dynamically based on validation checks
+  const getButtonText = () => {
+    if (isInsufficientShares) return "Insufficient Shares Balance"
+    return "Withdraw Liquidity"
   }
 
   return (
@@ -135,7 +144,9 @@ const Withdraw = () => {
             <Row className='my-3'>
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Shares to Remove:</strong></Form.Label>
-                <Form.Text muted>Your Pool Shares: {getActivePoolShares()}</Form.Text>
+                <Form.Text className={isInsufficientShares ? "text-danger fw-bold" : "text-muted"}>
+                  Your Pool Shares: {getActivePoolShares()}
+                </Form.Text>
               </div>
               <InputGroup>
                 <Form.Control
@@ -147,6 +158,7 @@ const Withdraw = () => {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   disabled={tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1}
+                  className={isInsufficientShares ? "is-invalid" : ""}
                 />
                 <InputGroup.Text style={{ width: "100px" }} className='justify-content-center'>
                   Shares
@@ -154,12 +166,23 @@ const Withdraw = () => {
               </InputGroup>
             </Row>
 
+            {/* SUBMIT BUTTON */}
             <Row className='my-3 px-2'>
               {isWithdrawing ? (
                 <Spinner animation='border' style={{display: 'block', margin: '0 auto'}} />
               ) : (
-                <Button type='submit' disabled={tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1 || !amount}>
-                  Withdraw Liquidity
+                <Button 
+                  type='submit' 
+                  variant={isInsufficientShares ? "secondary" : "primary"}
+                  disabled={
+                    tokenIndex0 === null || 
+                    tokenIndex1 === null || 
+                    tokenIndex0 === tokenIndex1 || 
+                    !amount || 
+                    isInsufficientShares
+                  }
+                >
+                  {getButtonText()}
                 </Button>
               )}
             </Row>
@@ -172,11 +195,11 @@ const Withdraw = () => {
                   <h6 className='text-muted mb-3'>Estimated Tokens To Receive:</h6>
                   <p className='d-flex justify-content-between mb-2'>
                     <span><strong>{symbols[tokenIndex0]} Returned:</strong></span> 
-                    <span className='text-success font-monospace'>{Number(estToken0).toFixed(6)}</span>
+                    <span className="text-success font-monospace fw-bold">{Number(estToken0).toFixed(6)}</span>
                   </p>
                   <p className='d-flex justify-content-between'>
                     <span><strong>{symbols[tokenIndex1]} Returned:</strong></span> 
-                    <span className='text-success font-monospace'>{Number(estToken1).toFixed(6)}</span>
+                    <span className="text-success font-monospace fw-bold">{Number(estToken1).toFixed(6)}</span>
                   </p>
                 </Row>
               </>
