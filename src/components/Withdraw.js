@@ -145,7 +145,7 @@ const Withdraw = () => {
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Shares to Remove:</strong></Form.Label>
                 <Form.Text className={isInsufficientShares ? "text-danger fw-bold" : "text-muted"}>
-                  Your Pool Shares: {getActivePoolShares()}
+                  Your Pool Shares: {availableShares.toFixed(4)}
                 </Form.Text>
               </div>
               <InputGroup>
@@ -195,11 +195,11 @@ const Withdraw = () => {
                   <h6 className='text-muted mb-3'>Estimated Tokens To Receive:</h6>
                   <p className='d-flex justify-content-between mb-2'>
                     <span><strong>{symbols[tokenIndex0]} Returned:</strong></span> 
-                    <span className="text-success font-monospace fw-bold">{Number(estToken0).toFixed(6)}</span>
+                    <span className="text-success font-monospace fw-bold">{Number(estToken0).toFixed(4)}</span>
                   </p>
                   <p className='d-flex justify-content-between'>
                     <span><strong>{symbols[tokenIndex1]} Returned:</strong></span> 
-                    <span className="text-success font-monospace fw-bold">{Number(estToken1).toFixed(6)}</span>
+                    <span className="text-success font-monospace fw-bold">{Number(estToken1).toFixed(4)}</span>
                   </p>
                 </Row>
               </>

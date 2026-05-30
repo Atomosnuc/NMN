@@ -156,9 +156,10 @@ const switchTokens = () => {
   }
 
   // Helper variables to handle safety validations
-  const userBalance = Number(getInputBalance())
+  const userBalanceIn = Number(getInputBalance())
+  const userBalanceOut = Number(getOutputBalance())
   const typedAmount = Number(inputAmount)
-  const isInsufficientBalance = typedAmount > userBalance
+  const isInsufficientBalance = typedAmount > userBalanceIn
   const isNoLiquidity = price === "No Liquidity Available"
 
   // Determine button text dynamically based on the form's health state
@@ -179,7 +180,7 @@ const switchTokens = () => {
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Input:</strong></Form.Label>
                 <Form.Text className={isInsufficientBalance ? "text-danger fw-bold" : "text-muted"}>
-                  Balance: {getInputBalance()}
+                  Balance: {userBalanceIn.toFixed(6)}
                 </Form.Text>
               </div>
               <InputGroup>
@@ -236,7 +237,7 @@ const switchTokens = () => {
             <Row className='my-4'>
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Output:</strong></Form.Label>
-                <Form.Text muted>Balance: {getOutputBalance()}</Form.Text>
+                <Form.Text muted>Balance: {userBalanceOut.toFixed(6)}</Form.Text>
               </div>
               <InputGroup>
                 <Form.Control 
@@ -282,7 +283,7 @@ const switchTokens = () => {
                 <div className="d-flex justify-content-between mb-1">
                   <span>Exchange Rate:</span>
                   <span className={`fw-bold ${isNoLiquidity ? 'text-danger' : 'text-dark'}`}>
-                    {typeof price === 'number' ? price.toFixed(6) : price}
+                    {typeof price === 'number' ? price.toFixed(4) : price}
                   </span>
                 </div>
                 

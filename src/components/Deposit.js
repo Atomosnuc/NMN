@@ -165,7 +165,7 @@ const Deposit = () => {
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Token A Amount:</strong></Form.Label>
                 <Form.Text className={isInsufficient0 ? "text-danger fw-bold" : "text-muted"}>
-                  Balance: {getBalance0()}
+                  Balance: {userBalance0.toFixed(4)}
                 </Form.Text>
               </div>
               <InputGroup>
@@ -198,7 +198,7 @@ const Deposit = () => {
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Token B Amount:</strong></Form.Label>
                 <Form.Text className={isInsufficient1 ? "text-danger fw-bold" : "text-muted"}>
-                  Balance: {getBalance1()}
+                  Balance: {userBalance1.toFixed(4)}
                 </Form.Text>
               </div>
               <InputGroup>
