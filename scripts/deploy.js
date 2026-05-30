@@ -29,7 +29,7 @@ async function main() {
     const token = await Token.deploy(
       config.name,
       config.symbol,
-      hre.ethers.utils.parseEther(config.totalSupply)
+      config.totalSupply
     );
     await token.deployed();
     

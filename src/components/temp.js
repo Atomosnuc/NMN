@@ -315,6 +315,14 @@ const Withdraw = () => {
                       </div>
                     ) : (
                       <>
+                        <div className='d-flex justify-content-between mb-2 small'>
+                          <span className='text-muted'>Your Entry Weighted √K:</span>
+                          <span className='font-monospace fw-bold'>{userGrowthData.trackedUserSqrtK ? userGrowthData.trackedUserSqrtK.toFixed(4) : '0.0000'}</span>
+                        </div>
+                        <div className='d-flex justify-content-between mb-2 small'>
+                          <span className='text-muted'>Current Live Pool √K:</span>
+                          <span className='font-monospace fw-bold'>{userGrowthData.livePoolSqrtK ? userGrowthData.livePoolSqrtK.toFixed(4) : '0.0000'}</span>
+                        </div>
                         <div className='d-flex justify-content-between border-top pt-2 mt-2'>
                           <span className='fw-bold text-muted small'>Accrued Fee Gains:</span>
                           <span className='text-success font-monospace fw-bold'>+{userGrowthData.roiPercentage}</span>
