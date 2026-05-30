@@ -37,6 +37,7 @@ contract NMN is Ownable {
     uint256 feeAmount,
     uint256 currentReserve0,
     uint256 currentReserve1,
+    uint256 currentSqrtK,
     uint256 timestamp
   );
 
@@ -55,6 +56,7 @@ contract NMN is Ownable {
     uint256 currentReserve0,
     uint256 currentReserve1,
     uint256 currentTotalShares,
+    uint256 currentSqrtK,
     uint256 timestamp
   );
 
@@ -68,6 +70,7 @@ contract NMN is Ownable {
     uint256 currentReserve0,
     uint256 currentReserve1,
     uint256 currentTotalShares,
+    uint256 userSharesRemaining,
     uint256 timestamp
   );
 
@@ -222,7 +225,7 @@ contract NMN is Ownable {
     }
   }
 
-  // POOL & Liquidity functions FUNCTIONS
+  // POOL & Liquidity functions
 
   function initializePool(Coin _coin0, Coin _coin1) external onlyOwner {
     (Coin coin0 ,Coin coin1) = sortCoins(_coin0, _coin1);
@@ -292,6 +295,7 @@ contract NMN is Ownable {
       pool.reserve0,
       pool.reserve1,
       pool.totalShares,
+      pool.sqrtK,
       block.timestamp
     );
   }
@@ -338,6 +342,7 @@ contract NMN is Ownable {
       pool.reserve0,
       pool.reserve1,
       pool.totalShares,
+      getUserShares(coin0, coin1, msg.sender),
       block.timestamp
     );
   }
@@ -401,6 +406,7 @@ contract NMN is Ownable {
       feeAmount,
       pool.reserve0,
       pool.reserve1,
+      pool.sqrtK,
       block.timestamp
     );
   }

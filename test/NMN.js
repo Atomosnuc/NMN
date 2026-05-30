@@ -244,6 +244,7 @@ describe('NMN', () => {
           check.reserve0,
           check.reserve1,
           check.totalShares,
+          check.sqrtK,
           timestamp
         )
         
@@ -363,6 +364,7 @@ describe('NMN', () => {
           estimate.feeAmount,
           check.reserve0,
           check.reserve1,
+          check.sqrtK,
           timestamp
         )
 
@@ -407,6 +409,7 @@ describe('NMN', () => {
           estimate.feeAmount,
           check.reserve0,
           check.reserve1,
+          check.sqrtK,
           timestamp
         )
 
@@ -442,6 +445,7 @@ describe('NMN', () => {
             estimate.feeAmount,
             check.reserve0,
             check.reserve1,
+            check.sqrtK,
             timestamp
         )
 
@@ -463,6 +467,7 @@ describe('NMN', () => {
             estimate.feeAmount,
             check.reserve0,
             check.reserve1,
+            check.sqrtK,
             timestamp
         )
 
@@ -484,6 +489,7 @@ describe('NMN', () => {
             estimate.feeAmount,
             check.reserve0,
             check.reserve1,
+            check.sqrtK,
             timestamp
         )
         // console.log(estimate)
@@ -558,6 +564,7 @@ describe('NMN', () => {
 
         timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
         check = await nmn.getPoolState(0, 1)
+        let userShares = await getUserShares(0, 1, liquidityProvider)
         await expect(transaction).to.emit(nmn, 'LiquidityRemoved')
         .withArgs(
           liquidityProvider.address,
@@ -569,6 +576,7 @@ describe('NMN', () => {
           check.reserve0,
           check.reserve1,
           check.totalShares,
+          userShares,
           timestamp
         )
       })
