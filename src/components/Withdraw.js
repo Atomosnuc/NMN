@@ -14,6 +14,8 @@ import Alert from './Alert';
 import { getPoolId } from '../store/reducers/nmn'
 import { removeLiquidity, loadAllPoolsAndBalances } from '../store/interactions'
 
+import config from '../config.json'
+
 
 // --- GLOBAL DE-SCALING UTILITY (SMART VERSION) ---
 const parseNum = (rawVal) => {
@@ -114,6 +116,7 @@ const Withdraw = () => {
 
   const provider = useSelector(state => state.provider.connection)
   const account = useSelector(state => state.provider.account)
+  const chainId = useSelector(state => state.provider.chainId)
 
   const tokens = useSelector(state => state.tokens.contracts)
   const symbols = useSelector(state => state.tokens.symbols)
@@ -188,8 +191,8 @@ const Withdraw = () => {
         setLoadingMetrics(true)
 
         // 1. Resolve raw token contract addresses from your state list
-        const addr0 = tokens[tokenIndex0].address
-        const addr1 = tokens[tokenIndex1].address
+        // const addr0 = tokens[tokenIndex0].address
+        // const addr1 = tokens[tokenIndex1].address
 
         // 2. CRITICAL FIX: Sort by Enum index parameters instead of alphabetical addresses!
         // This ensures frontend lookups match your contract's internal sortCoinsAndAmounts logic.
@@ -212,11 +215,15 @@ const Withdraw = () => {
         }
 
         // 4. Query filters targeted explicitly at the connected user account
+        // Fetch your contract's deployment block based on the current Chain ID
+        // Fallback to 0 if running on a fresh local Hardhat node
+        const DEPLOYMENT_BLOCK = config[chainId]?.nmn?.deploymentBlock || 0;
+
         const addFilter = nmn.filters.LiquidityAdded(account)
         const removeFilter = nmn.filters.LiquidityRemoved(account)
 
-        const addLogs = await nmn.queryFilter(addFilter, 0, 'latest')
-        const removeLogs = await nmn.queryFilter(removeFilter, 0, 'latest')
+        const addLogs = await nmn.queryFilter(addFilter, DEPLOYMENT_BLOCK, 'latest')
+        const removeLogs = await nmn.queryFilter(removeFilter, DEPLOYMENT_BLOCK, 'latest')
 
         // 5. Parse and isolate LiquidityAdded events using Enum-sorted parameters
         const formattedAdd = addLogs
@@ -263,7 +270,7 @@ const Withdraw = () => {
     }
 
     fetchUserGrowthMetrics()
-  }, [tokenIndex0, tokenIndex1, nmn, account, isSuccess, tokens, poolData])
+  }, [tokenIndex0, tokenIndex1, nmn, account, isSuccess, tokens, poolData, chainId])
 
 
   // --- ESTIMATED OUTPUT GENERATOR ---

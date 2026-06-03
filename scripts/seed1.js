@@ -108,11 +108,7 @@ async function main() {
       const amountJ = tokens(targetPoolAmounts[j]);
 
       try {
-        if (i === 0 && j === 1) {
-  console.log("=== SEED SCRIPT TRANSACTION DEPOSIT VALUES ===");
-  console.log("Amount I sending to contract (raw string):", amountI.toString());
-  console.log("Amount J sending to contract (raw string):", amountJ.toString());
-}
+        
         const tx = await nmn.connect(deployer).addLiquidity(i, amountI, j, amountJ);
         await tx.wait();
         console.log(`  Liquidity Added to Pool ${tokenNames[i]} <-> ${tokenNames[j]}:`);
