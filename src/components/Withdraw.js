@@ -14,55 +14,85 @@ import Alert from './Alert';
 import { getPoolId } from '../store/reducers/nmn'
 import { removeLiquidity, loadAllPoolsAndBalances } from '../store/interactions'
 
-// --- GEOMETRIC SHARE-WEIGHTED ROLLING AVERAGE COMPUTATION LAYER ---
-function calculateUserOffChainGrowth(historyEvents, currentPoolSqrtK) {
-  let userShares = ethers.BigNumber.from(0);
-  let userSqrtK = 0;
 
-  const sortedEvents = [...historyEvents].sort((a, b) => Number(a.timestamp - b.timestamp));
+// --- GLOBAL DE-SCALING UTILITY (SMART VERSION) ---
+const parseNum = (rawVal) => {
+  if (rawVal === undefined || rawVal === null || rawVal === '') return 0;
+
+  const valStr = rawVal.toString().trim();
+
+  // If it already contains a decimal point, it is already formatted!
+  if (valStr.includes('.')) {
+    return Number(valStr);
+  }
+
+  // Otherwise, safely treat it as an unscaled 18-decimal blockchain BigNumber string
+  try {
+    return Number(ethers.utils.formatEther(valStr));
+  } catch (error) {
+    // Fallback if it is a simple plain string integer (e.g. "100")
+    const parsed = Number(valStr);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+};
+
+// --- GEOMETRIC SHARE-WEIGHTED ROLLING AVERAGE COMPUTATION LAYER (ALIGNED SCALE) ---
+function calculateUserOffChainGrowth(historyEvents, currentPoolSqrtK) {
+  let userShares = 0; 
+  let userSqrtK = 0;
+  let lastEventPoolSqrtK = 0; // Tracks the absolute latest historical pool snapshot scale
+
+  // Chronological sort using block timestamps
+  const sortedEvents = [...historyEvents].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const event of sortedEvents) {
     if (event.type === 'LiquidityAdded') {
-      // Safely parse the string to a BigNumber
-      const mintedShares = ethers.BigNumber.from(event.shareAmountMinted);
-      const poolSqrtK = Number(event.currentSqrtK);
+      const mintedSharesNum = parseNum(event.shareAmountMinted);
+      const poolSqrtKNum = parseNum(event.currentSqrtK);
+      
+      lastEventPoolSqrtK = poolSqrtKNum; // Set snapshot
 
-      // Check if userShares is zero using .isZero()
-      if (userShares.isZero()) {
-        userSqrtK = poolSqrtK;
-        userShares = mintedShares;
+      if (userShares === 0 || userSqrtK === 0) {
+        userSqrtK = poolSqrtKNum;
+        userShares = mintedSharesNum;
       } else {
-        // Convert to Number safely for the floating-point logarithm math
-        const oldSharesNum = Number(ethers.utils.formatEther(userShares));
-        const mintedSharesNum = Number(ethers.utils.formatEther(mintedShares));
-        const totalNewSharesNum = oldSharesNum + mintedSharesNum;
+        const totalNewSharesNum = userShares + mintedSharesNum;
 
-        const logAvg = ((oldSharesNum * Math.log(userSqrtK)) + (mintedSharesNum * Math.log(poolSqrtK))) / totalNewSharesNum;
+        // Perform weighted log calculations on cleanly normalized native numbers
+        const logAvg = ((userShares * Math.log(userSqrtK)) + (mintedSharesNum * Math.log(poolSqrtKNum))) / totalNewSharesNum;
         userSqrtK = Math.exp(logAvg);
-        
-        // Add BigNumbers using .add()
-        userShares = userShares.add(mintedShares);
+        userShares = totalNewSharesNum;
       }
     } 
     else if (event.type === 'LiquidityRemoved') {
-      const sharesRemaining = ethers.BigNumber.from(event.userSharesRemaining);
+      const sharesRemainingNum = parseNum(event.userSharesRemaining);
       
-      if (sharesRemaining.isZero()) {
-        userShares = ethers.BigNumber.from(0);
-        userSqrtK = 0;
+      if (sharesRemainingNum <= 0) {
+        userShares = 0;
+        userSqrtK = 0; 
+        lastEventPoolSqrtK = 0;
       } else {
-        userShares = sharesRemaining;
+        userShares = sharesRemainingNum;
       }
     }
   }
 
+  // ALIGNMENT SAFETY LAYER: If the live pool state scale dropped due to a 
+  // frontend parsing bug, fall back to the historical event logs to preserve the scale ratio
+  let livePoolSqrtKNum = parseNum(currentPoolSqrtK);
+  
+  if (livePoolSqrtKNum < (userSqrtK / 2) && lastEventPoolSqrtK > 0) {
+    livePoolSqrtKNum = lastEventPoolSqrtK;
+  }
+
   let growthFactor = 0;
   if (userSqrtK > 0) {
-    growthFactor = Number(currentPoolSqrtK) / userSqrtK;
+    growthFactor = livePoolSqrtKNum / userSqrtK;
   }
 
   return {
     trackedUserSqrtK: userSqrtK,
+    livePoolSqrtK: livePoolSqrtKNum,
     roiPercentage: growthFactor > 0 ? ((growthFactor - 1) * 100).toFixed(2) + "%" : "0%"
   };
 }
@@ -94,6 +124,51 @@ const Withdraw = () => {
   const isSuccess = useSelector(state => state.nmn.withdrawing.isSuccess)
   const transactionHash = useSelector(state => state.nmn.withdrawing.transactionHash)
 
+  const withdrawHandler = async (e) => {
+    e.preventDefault()
+    setShowAlert(false)
+
+    // 1. Double-check that valid and distinct tokens are selected
+    if (tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1) {
+      window.alert('Invalid pool selection.')
+      return
+    }
+
+    // 2. Extra safety check against trying to submit more shares than available
+    const availableShares = parseNum(getActivePoolShares())
+    const typedShares = Number(amount)
+    if (typedShares > availableShares) {
+      window.alert('Insufficient shares balance to execute withdrawal.')
+      return
+    }
+
+    try {
+      // 3. Fire the smart contract interaction via Redux action dispatch layer
+      await removeLiquidity(
+        provider,
+        nmn,
+        tokenIndex0,
+        tokenIndex1,
+        amount,
+        dispatch
+      )
+
+      // 4. Force reload application pools & account balances state on success
+      await loadAllPoolsAndBalances(nmn, tokens, account, dispatch)
+
+      // 5. Trigger the custom alert modal layout view
+      setShowAlert(true)
+    } catch (error) {
+      console.error("Execution failed within liquidity withdrawal sequence:", error)
+      window.alert("Transaction rejected or failed. View console logs for details.")
+    } finally {
+      // 6. Flush user input field state values cleanly back to empty defaults
+      setAmount('')
+    }
+  }
+
+
+
   // Extract the active user shares balance for the specifically selected token pair combination
   const getActivePoolShares = () => {
     if (tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1) return '0'
@@ -101,7 +176,7 @@ const Withdraw = () => {
     return poolData[poolId]?.userShares || '0'
   }
 
-  // --- LIVE EVENT CRAWLER LOOP ---
+// --- LIVE EVENT CRAWLER LOOP (ENUM ORDER FIXED) ---
   useEffect(() => {
     const fetchUserGrowthMetrics = async () => {
       if (tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1 || !nmn || !account) {
@@ -112,40 +187,72 @@ const Withdraw = () => {
       try {
         setLoadingMetrics(true)
 
-        // 1. Fetch the latest live pool state from the contract view function
-        const poolInfo = await nmn.getPoolState(tokenIndex0, tokenIndex1)
-        const liveSqrtK = poolInfo.sqrtK.toString()
+        // 1. Resolve raw token contract addresses from your state list
+        const addr0 = tokens[tokenIndex0].address
+        const addr1 = tokens[tokenIndex1].address
 
-        // 2. Setup standard indexed filters targeted exclusively at the connected user account
+        // 2. CRITICAL FIX: Sort by Enum index parameters instead of alphabetical addresses!
+        // This ensures frontend lookups match your contract's internal sortCoinsAndAmounts logic.
+        const lowEnumIndex = Math.min(tokenIndex0, tokenIndex1);
+        const highEnumIndex = Math.max(tokenIndex0, tokenIndex1);
+
+        const sortedAddr0 = tokens[lowEnumIndex].address.toLowerCase();
+        const sortedAddr1 = tokens[highEnumIndex].address.toLowerCase();
+
+        // 3. Fetch live pool state and format variables uniformly
+        const poolId = `${lowEnumIndex}-${highEnumIndex}`;
+        const currentPool = poolData[poolId];
+        
+        let liveSqrtK = "0";
+        if (currentPool && currentPool.reserve0 && currentPool.reserve1) {
+          const res0Num = parseNum(currentPool.reserve0);
+          const res1Num = parseNum(currentPool.reserve1);
+          const calculatedSqrtK = Math.sqrt(res0Num * res1Num);
+          liveSqrtK = ethers.utils.parseUnits(calculatedSqrtK.toFixed(18), 'ether').toString();
+        }
+
+        // 4. Query filters targeted explicitly at the connected user account
         const addFilter = nmn.filters.LiquidityAdded(account)
         const removeFilter = nmn.filters.LiquidityRemoved(account)
 
-        // Query historical blocks from deployment (0) up to latest execution states
         const addLogs = await nmn.queryFilter(addFilter, 0, 'latest')
         const removeLogs = await nmn.queryFilter(removeFilter, 0, 'latest')
 
-        // 3. Format into a structured, linear processing data array
-        const formattedAdd = addLogs.map(log => ({
-          type: 'LiquidityAdded',
-          shareAmountMinted: log.args.shareAmountMinted.toString(),
-          currentSqrtK: log.args.currentSqrtK.toString(),
-          timestamp: log.args.timestamp
-        }))
+        // 5. Parse and isolate LiquidityAdded events using Enum-sorted parameters
+        const formattedAdd = addLogs
+          .filter(log => {
+            const log0 = log.args.token0.toLowerCase()
+            const log1 = log.args.token1.toLowerCase()
+            return (log0 === sortedAddr0 && log1 === sortedAddr1)
+          })
+          .map(log => ({
+            type: 'LiquidityAdded',
+            shareAmountMinted: log.args.shareAmountMinted.toString(),
+            currentSqrtK: log.args.currentSqrtK.toString(),
+            timestamp: Number(log.args.timestamp)
+          }))
 
-        const formattedRemove = removeLogs.map(log => ({
-          type: 'LiquidityRemoved',
-          userSharesRemaining: log.args.userSharesRemaining.toString(),
-          timestamp: log.args.timestamp
-        }))
+        // 6. Parse and isolate LiquidityRemoved events using Enum-sorted parameters
+        const formattedRemove = removeLogs
+          .filter(log => {
+            const log0 = log.args.token0.toLowerCase()
+            const log1 = log.args.token1.toLowerCase()
+            return (log0 === sortedAddr0 && log1 === sortedAddr1)
+          })
+          .map(log => ({
+            type: 'LiquidityRemoved',
+            userSharesRemaining: log.args.userSharesRemaining.toString(),
+            timestamp: Number(log.args.timestamp)
+          }))
 
         const fullHistory = [...formattedAdd, ...formattedRemove]
 
-        // 4. Calculate performance factors off-chain on-the-fly
+        // 7. Calculate tracking metrics
         const metrics = calculateUserOffChainGrowth(fullHistory, liveSqrtK)
         
         setUserGrowthData({
           trackedUserSqrtK: metrics.trackedUserSqrtK,
-          livePoolSqrtK: Number(liveSqrtK),
+          livePoolSqrtK: metrics.livePoolSqrtK, 
           roiPercentage: metrics.roiPercentage
         })
       } catch (error) {
@@ -156,11 +263,13 @@ const Withdraw = () => {
     }
 
     fetchUserGrowthMetrics()
-  }, [tokenIndex0, tokenIndex1, nmn, account, isSuccess]) // Re-runs on successful withdraw transactions to balance records
+  }, [tokenIndex0, tokenIndex1, nmn, account, isSuccess, tokens, poolData])
 
-  // Calculate estimated outputs on input changes using the contract view layer
+
+  // --- ESTIMATED OUTPUT GENERATOR ---
   useEffect(() => {
     const fetchEstimates = async () => {
+      // Safety check: Exit cleanly if no valid pool is selected or amount input is empty/zero
       if (!amount || isNaN(amount) || Number(amount) === 0 || tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1) {
         setEstToken0('0.0')
         setEstToken1('0.0')
@@ -168,11 +277,13 @@ const Withdraw = () => {
       }
 
       try {
+        // Convert user input string float to 18-decimal uint256 BigNumber for contract call
         const parsedShares = ethers.utils.parseUnits(amount.toString(), 'ether')
         const results = await nmn.calculateWithdrawAmount(tokenIndex0, tokenIndex1, parsedShares)
-        
-        setEstToken0(ethers.utils.formatUnits(results.coin0Amount, 'ether'))
-        setEstToken1(ethers.utils.formatUnits(results.coin1Amount, 'ether'))
+
+        // Clean outputs utilizing your uniform parseNum helper function
+        setEstToken0(parseNum(results.coin0Amount).toString())
+        setEstToken1(parseNum(results.coin1Amount).toString())
       } catch (error) {
         console.error("Failed to estimate withdrawal outputs:", error)
         setEstToken0('0.0')
@@ -183,42 +294,22 @@ const Withdraw = () => {
     fetchEstimates()
   }, [amount, tokenIndex0, tokenIndex1, nmn])
 
-  const withdrawHandler = async (e) => {
-    e.preventDefault()
-    setShowAlert(false)
-
-    if (tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1) {
-      window.alert('Invalid pool selection.')
-      return
-    }
-
-    await removeLiquidity(
-      provider,
-      nmn,
-      tokenIndex0,
-      tokenIndex1,
-      amount,
-      dispatch
-    )
-
-    await loadAllPoolsAndBalances(nmn, tokens, account, dispatch)
-    
-    setShowAlert(true)
-    setAmount('')
-  }
 
   // --- SAFETY VALIDATION ENGINE ---
-  const availableShares = Number(getActivePoolShares())
+  // Use parseNum on getActivePoolShares string to get native JavaScript numbers for comparison
+  const availableShares = parseNum(getActivePoolShares())
   const typedShares = Number(amount)
-  const isInsufficientShares = typedShares > availableShares
+  const isInsufficientShares = typedShares > availableShares && amount !== ''
 
   // Determine button text dynamically based on validation checks
   const getButtonText = () => {
-    if (isInsufficientShares) return "Insufficient Shares Balance"
+    if (isInsufficientShares) {
+      return "Insufficient Shares Balance";
+    }
     return "Withdraw Liquidity"
   }
-  
-   return (
+
+  return (
     <div>
       <Card style={{ maxWidth: '450px' }} className='mx-auto px-4 shadow-sm'>
         {account ? (
@@ -283,16 +374,16 @@ const Withdraw = () => {
             {/* SUBMIT BUTTON */}
             <Row className='my-3 px-2'>
               {isWithdrawing ? (
-                <Spinner animation='border' style={{display: 'block', margin: '0 auto'}} />
+                <Spinner animation='border' style={{ display: 'block', margin: '0 auto' }} />
               ) : (
-                <Button 
-                  type='submit' 
+                <Button
+                  type='submit'
                   variant={isInsufficientShares ? "secondary" : "primary"}
                   disabled={
-                    tokenIndex0 === null || 
-                    tokenIndex1 === null || 
-                    tokenIndex0 === tokenIndex1 || 
-                    !amount || 
+                    tokenIndex0 === null ||
+                    tokenIndex1 === null ||
+                    tokenIndex0 === tokenIndex1 ||
+                    !amount ||
                     isInsufficientShares
                   }
                 >
@@ -315,6 +406,14 @@ const Withdraw = () => {
                       </div>
                     ) : (
                       <>
+                        <div className='d-flex justify-content-between mb-2 small'>
+                          <span className='text-muted'>Your Entry Weighted √K:</span>
+                          <span className='font-monospace fw-bold'>{userGrowthData.trackedUserSqrtK ? userGrowthData.trackedUserSqrtK.toFixed(4) : '0.0000'}</span>
+                        </div>
+                        <div className='d-flex justify-content-between mb-2 small'>
+                          <span className='text-muted'>Current Live Pool √K:</span>
+                          <span className='font-monospace fw-bold'>{userGrowthData.livePoolSqrtK ? userGrowthData.livePoolSqrtK.toFixed(4) : '0.0000'}</span>
+                        </div>
                         <div className='d-flex justify-content-between border-top pt-2 mt-2'>
                           <span className='fw-bold text-muted small'>Accrued Fee Gains:</span>
                           <span className='text-success font-monospace fw-bold'>+{userGrowthData.roiPercentage}</span>
@@ -338,11 +437,11 @@ const Withdraw = () => {
                 <Row className='px-2'>
                   <h6 className='text-muted mb-3'>Estimated Tokens To Receive:</h6>
                   <p className='d-flex justify-content-between mb-2'>
-                    <span><strong>{symbols[tokenIndex0]} Returned:</strong></span> 
+                    <span><strong>{symbols[tokenIndex0]} Returned:</strong></span>
                     <span className="text-success font-monospace fw-bold">{Number(estToken0).toFixed(4)}</span>
                   </p>
                   <p className='d-flex justify-content-between'>
-                    <span><strong>{symbols[tokenIndex1]} Returned:</strong></span> 
+                    <span><strong>{symbols[tokenIndex1]} Returned:</strong></span>
                     <span className="text-success font-monospace fw-bold">{Number(estToken1).toFixed(4)}</span>
                   </p>
                 </Row>

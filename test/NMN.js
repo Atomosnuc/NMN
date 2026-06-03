@@ -564,7 +564,7 @@ describe('NMN', () => {
 
         timestamp = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
         check = await nmn.getPoolState(0, 1)
-        let userShares = await getUserShares(0, 1, liquidityProvider)
+        let userShares = await nmn.getUserShares(0, 1, liquidityProvider.address)
         await expect(transaction).to.emit(nmn, 'LiquidityRemoved')
         .withArgs(
           liquidityProvider.address,

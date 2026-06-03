@@ -84,6 +84,8 @@ export const loadNMN = async (provider, chainId, dispatch) => {
 // // LOAD BALANCES & SHARES
 // LOAD MULTI-POOL BALANCES, RESERVES, AND SHARES
 export const loadAllPoolsAndBalances = async (nmn, tokens, account, dispatch) => {
+
+
   // 1. Fetch wallet balances for all 7 tokens
   for (const token of tokens) {
     const rawBalance = await token.balanceOf(account);
@@ -99,6 +101,12 @@ export const loadAllPoolsAndBalances = async (nmn, tokens, account, dispatch) =>
     for (let j = i + 1; j < totalCoins; j++) {
       try {
         const pool = await nmn.getPoolState(i, j);
+        // --- EMERGENCY DEBUG CHECKPOINT ---
+if (i === 0 && j === 1) {
+  console.log("=== RAW BLOCKCHAIN VALUES FOR POOL 0-1 ===");
+  console.log("Raw Reserve 0 (BigNumber):", pool.reserve0.toString());
+  console.log("Raw Reserve 1 (BigNumber):", pool.reserve1.toString());
+  console.log("Raw Total Shares (BigNumber):", pool.totalShares.toString());}
         
         dispatch(poolStateLoaded({
           coin0: i,

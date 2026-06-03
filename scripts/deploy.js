@@ -12,13 +12,13 @@ async function main() {
   // Define metadata for all tokens matching Coin enum order:
   // enum Coin { mirian, castar, tharni, pony, penny, brass, copper }
   const tokenConfigs = [
-    { name: "Mirian Token", symbol: "MRN", totalSupply: "1000000" },
-    { name: "Castar Token", symbol: "CSTR", totalSupply: "1000000" },
-    { name: "Tharni Token", symbol: "TRN", totalSupply: "1000000" },
-    { name: "Pony Token", symbol: "PONY", totalSupply: "1000000" },
-    { name: "Penny Token", symbol: "PENNY", totalSupply: "1000000" },
-    { name: "Brass Token", symbol: "BRASS", totalSupply: "1000000" },
-    { name: "Copper Token", symbol: "COP", totalSupply: "1000000" }
+    { name: "Mirian Token", symbol: "MRN", totalSupply: "10000000" },
+    { name: "Castar Token", symbol: "CSTR", totalSupply: "10000000" },
+    { name: "Tharni Token", symbol: "TRN", totalSupply: "10000000" },
+    { name: "Pony Token", symbol: "PONY", totalSupply: "10000000" },
+    { name: "Penny Token", symbol: "PENNY", totalSupply: "10000000" },
+    { name: "Brass Token", symbol: "BRASS", totalSupply: "10000000" },
+    { name: "Copper Token", symbol: "COP", totalSupply: "10000000" }
   ];
 
   const deployedTokenAddresses = [];
