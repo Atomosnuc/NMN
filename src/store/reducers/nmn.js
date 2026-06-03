@@ -15,6 +15,7 @@ export const nmn = createSlice({
     // Structure: { "0-1": { reserve0: '0', reserve1: '0', totalShares: '0', userShares: '0', exists: false } }
     poolData: {},
     swaps: [],
+    liquidityHistory:{ additions: [], removals: [] },
     depositing: { isDepositing: false, isSuccess: false, transactionHash: null },
     withdrawing: { isWithdrawing: false, isSuccess: false, transactionHash: null },
     swapping: { isSwapping: false, isSuccess: false, transactionHash: null }
@@ -46,6 +47,10 @@ export const nmn = createSlice({
     },
     swapsLoaded: (state, action) => {
       state.swaps = action.payload;
+    },
+    liquidityHistoryLoaded: (state, action) => {
+      state.liquidityHistory.additions = action.payload.additions;
+      state.liquidityHistory.removals = action.payload.removals;
     },
     depositRequest: (state) => {
       state.depositing = { isDepositing: true, isSuccess: false, transactionHash: null };
@@ -82,6 +87,7 @@ export const {
   poolStateLoaded,
   poolSharesLoaded,
   swapsLoaded,
+  liquidityHistoryLoaded,
   depositRequest,
   depositSuccess,
   depositFail,

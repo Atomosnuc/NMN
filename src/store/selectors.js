@@ -2,7 +2,11 @@ import { createSelector } from "reselect"
 import { ethers } from "ethers"
 
 const tokens = state => state.tokens.contracts
-const swaps = state => state.nmn.swaps // Updated path from state.amm to state.nmn
+const swaps = state => state.nmn.swaps // 
+
+const getLiquidityHistory = state => state.nmn.liquidityHistory;
+const getActiveAccount = state => state.provider.account;
+const getPoolData = state => state.nmn.poolData;
 
 // Selectors to pass the active user dropdown selections dynamically into the chart pipeline
 export const selectActivePair = (state, inputIndex, outputIndex) => ({ inputIndex, outputIndex })
@@ -76,3 +80,144 @@ export const chartSelector = createSelector(
     }
   }
 )
+
+// --- GLOBAL DE-SCALING UTILITY ---
+const parseNum = (rawVal) => {
+  if (rawVal === undefined || rawVal === null || rawVal === '') return 0;
+  
+  const valStr = rawVal.toString().trim();
+
+  // If it already contains a decimal point, it is already formatted!
+  if (valStr.includes('.')) {
+    return Number(valStr);
+  }
+
+  // Otherwise, safely treat it as an unscaled 18-decimal blockchain BigNumber string
+  try {
+    return Number(ethers.utils.formatEther(valStr));
+  } catch (error) {
+    // Fallback if it is a simple plain string integer (e.g. "100")
+    const parsed = Number(valStr);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+};
+
+// --- GLOBAL REACTIVE LIQUIDITY PERFORMANCE SELECTOR ENGINE ---
+export const liquidityPerformanceSelector = createSelector(
+  [getLiquidityHistory, tokens, getActiveAccount, getPoolData, selectActivePair],
+  (history, tokensList, account, poolData, activePair) => {
+    const { inputIndex, outputIndex } = activePair;
+
+    // Guard Clause: Exit instantly if parameters are missing or incomplete
+    if (
+      !tokensList || 
+      tokensList.length === 0 || 
+      inputIndex === null || 
+      outputIndex === null || 
+      inputIndex === outputIndex || 
+      !account ||
+      !history
+    ) {
+      return { trackedUserSqrtK: 0, livePoolSqrtK: 0, roiPercentage: '0.0000%' };
+    }
+
+    // 1. Sort indices numerically to match your contract's strict Enum configuration order
+    const lowIndex = Math.min(inputIndex, outputIndex);
+    const highIndex = Math.max(inputIndex, outputIndex);
+
+    const sortedAddr0 = tokensList[lowIndex].address.toLowerCase();
+    const sortedAddr1 = tokensList[highIndex].address.toLowerCase();
+
+    // 2. Filter additions for the selected account and pool pair
+    const formattedAdd = (history.additions || [])
+      .filter(log => {
+        const matchesUser = log.args.user?.toLowerCase() === account.toLowerCase();
+        const matchesToken0 = log.args.token0?.toLowerCase() === sortedAddr0;
+        const matchesToken1 = log.args.token1?.toLowerCase() === sortedAddr1;
+        return matchesUser && matchesToken0 && matchesToken1;
+      })
+      .map(log => ({
+        type: 'LiquidityAdded',
+        shareAmountMinted: log.args.shareAmountMinted.toString(),
+        currentSqrtK: log.args.currentSqrtK.toString(),
+        timestamp: Number(log.args.timestamp)
+      }));
+
+    // 3. Filter removals for the selected account and pool pair
+    const formattedRemove = (history.removals || [])
+      .filter(log => {
+        const matchesUser = log.args.user?.toLowerCase() === account.toLowerCase();
+        const matchesToken0 = log.args.token0?.toLowerCase() === sortedAddr0;
+        const matchesToken1 = log.args.token1?.toLowerCase() === sortedAddr1;
+        return matchesUser && matchesToken0 && matchesToken1;
+      })
+      .map(log => ({
+        type: 'LiquidityRemoved',
+        userSharesRemaining: log.args.userSharesRemaining.toString(),
+        timestamp: Number(log.args.timestamp)
+      }));
+
+    // 4. Combine and chronologically sort events
+    const fullHistory = [...formattedAdd, ...formattedRemove].sort((a, b) => a.timestamp - b.timestamp);
+
+    // 5. Run the core off-chain geometric share-weighted rolling average loop
+    let userShares = 0;
+    let userSqrtK = 0;
+    let lastEventPoolSqrtK = 0;
+
+    for (const event of fullHistory) {
+      if (event.type === 'LiquidityAdded') {
+        const mintedSharesNum = parseNum(event.shareAmountMinted);
+        const poolSqrtKNum = parseNum(event.currentSqrtK);
+        lastEventPoolSqrtK = poolSqrtKNum;
+
+        if (userShares === 0 || userSqrtK === 0) {
+          userSqrtK = poolSqrtKNum;
+          userShares = mintedSharesNum;
+        } else {
+          const totalNewSharesNum = userShares + mintedSharesNum;
+          const logAvg = ((userShares * Math.log(userSqrtK)) + (mintedSharesNum * Math.log(poolSqrtKNum))) / totalNewSharesNum;
+          userSqrtK = Math.exp(logAvg);
+          userShares = totalNewSharesNum;
+        }
+      } 
+      else if (event.type === 'LiquidityRemoved') {
+        const sharesRemainingNum = parseNum(event.userSharesRemaining);
+        if (sharesRemainingNum <= 0) {
+          userShares = 0;
+          userSqrtK = 0;
+          lastEventPoolSqrtK = 0;
+        } else {
+          userShares = sharesRemainingNum;
+        }
+      }
+    }
+
+    // 6. Calculate the live checkpoint using your pre-parsed Redux state
+    const poolId = `${lowIndex}-${highIndex}`;
+    const currentPool = poolData[poolId];
+    
+    let livePoolSqrtKNum = 0;
+    if (currentPool && currentPool.reserve0 && currentPool.reserve1) {
+      const res0Num = parseNum(currentPool.reserve0);
+      const res1Num = parseNum(currentPool.reserve1);
+      livePoolSqrtKNum = Math.sqrt(res0Num * res1Num);
+    }
+
+    // Handle initial rendering scale fallback logic safely
+    if (livePoolSqrtKNum < (userSqrtK / 2) && lastEventPoolSqrtK > 0) {
+      livePoolSqrtKNum = lastEventPoolSqrtK;
+    }
+
+    let growthFactor = 0;
+    if (userSqrtK > 0) {
+      growthFactor = livePoolSqrtKNum / userSqrtK;
+    }
+
+    return {
+      trackedUserSqrtK: userSqrtK,
+      livePoolSqrtK: livePoolSqrtKNum,
+      roiPercentage: growthFactor > 0 ? ((growthFactor - 1) * 100).toFixed(4) + "%" : "0.0000%"
+    };
+  }
+);

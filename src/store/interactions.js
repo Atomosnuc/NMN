@@ -17,6 +17,7 @@ import {
   poolStateLoaded,
   poolSharesLoaded,
   swapsLoaded,
+  liquidityHistoryLoaded,
   depositRequest,
   depositSuccess,
   depositFail,
@@ -223,4 +224,39 @@ export const loadAllSwaps = async (provider, nmn, dispatch) => {
 
   dispatch(swapsLoaded(swaps));
 
+}
+
+// // ------------------------------------------------------------------------------
+// // LOAD ALL LIQUIDITY EVENTS MATRIX CACHE
+
+export const loadAllLiquidityEvents = async (provider, nmn, dispatch) => {
+  try {
+    // 1. Fetch block parameters matching your deployment configurations
+    const block = await provider.getBlockNumber();
+    const { chainId } = await provider.getNetwork();
+    
+    // Check your dynamic deployment checkpoints configuration
+    const fromBlock = config[chainId]?.nmn?.deploymentBlock ?? 0;
+
+    // 2. Setup simultaneous querying streams across all 21 pools
+    const addStream = await nmn.queryFilter('LiquidityAdded', fromBlock, block);
+    const removeStream = await nmn.queryFilter('LiquidityRemoved', fromBlock, block);
+
+    // 3. Decorate results arrays uniformly to safely extract event arguments
+    const additions = addStream.map(event => ({
+      hash: event.transactionHash,
+      args: event.args
+    }));
+
+    const removals = removeStream.map(event => ({
+      hash: event.transactionHash,
+      args: event.args
+    }));
+
+    // 4. Fire action directly to push the datasets cleanly into Redux memory
+    dispatch(liquidityHistoryLoaded({ additions, removals }));
+
+  } catch (error) {
+    console.error("Failed to compile background decentralized liquidity logs:", error);
+  }
 }
