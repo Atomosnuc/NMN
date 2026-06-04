@@ -66,7 +66,7 @@ export const loadTokens = async (provider, chainId, dispatch) => {
   for (const key of coinKeys) {
     const address = config[chainId][key].address
     const contract = new ethers.Contract(address, TOKEN_ABI, provider)
-    contracts.push(contract);
+    contracts.push(contract)
     symbols.push(await contract.symbol())
   }
 
@@ -89,11 +89,11 @@ export const loadAllPoolsAndBalances = async (nmn, tokens, account, dispatch) =>
 
   // 1. Fetch wallet balances for all 7 tokens
   for (const token of tokens) {
-    const rawBalance = await token.balanceOf(account);
+    const rawBalance = await token.balanceOf(account)
     dispatch(tokenBalanceLoaded({
       tokenAddress: token.address,
       balance: ethers.utils.formatUnits(rawBalance, 'ether')
-    }));
+    }))
   }
 
   // 2. Query configurations for every unique pool combination matrix
@@ -101,13 +101,7 @@ export const loadAllPoolsAndBalances = async (nmn, tokens, account, dispatch) =>
   for (let i = 0; i < totalCoins; i++) {
     for (let j = i + 1; j < totalCoins; j++) {
       try {
-        const pool = await nmn.getPoolState(i, j);
-        // --- EMERGENCY DEBUG CHECKPOINT ---
-if (i === 0 && j === 1) {
-  console.log("=== RAW BLOCKCHAIN VALUES FOR POOL 0-1 ===");
-  console.log("Raw Reserve 0 (BigNumber):", pool.reserve0.toString());
-  console.log("Raw Reserve 1 (BigNumber):", pool.reserve1.toString());
-  console.log("Raw Total Shares (BigNumber):", pool.totalShares.toString());}
+        const pool = await nmn.getPoolState(i, j)
         
         dispatch(poolStateLoaded({
           coin0: i,
@@ -116,7 +110,7 @@ if (i === 0 && j === 1) {
           reserve1: ethers.utils.formatUnits(pool.reserve1, 'ether'),
           totalShares: ethers.utils.formatUnits(pool.totalShares, 'ether'),
           exists: pool.exists
-        }));
+        }))
 
         if (account && pool.exists) {
           const shares = await nmn.getUserShares(i, j, account);
@@ -124,10 +118,10 @@ if (i === 0 && j === 1) {
             coin0: i,
             coin1: j,
             shares: ethers.utils.formatUnits(shares, 'ether')
-          }));
+          }))
         }
       } catch (error) {
-        console.error(`Failed to map tracking metrics on pool iteration ${i}-${j}:`, error);
+        console.error(`Failed to map tracking metrics on pool iteration ${i}-${j}:`, error)
       }
     }
   }
@@ -139,26 +133,26 @@ if (i === 0 && j === 1) {
 // // ADD LIQUDITY 
 export const addLiquidity = async (provider, nmn, token0Contract, token1Contract, coinIndex0, amount0, coinIndex1, amount1, dispatch) => {
   try {
-    dispatch(depositRequest());
-    const signer = await provider.getSigner();
+    dispatch(depositRequest())
+    const signer = await provider.getSigner()
     // Formats numbers to BigNumbers
-    const parsedAmount0 = ethers.utils.parseUnits(amount0.toString(), 'ether');
-    const parsedAmount1 = ethers.utils.parseUnits(amount1.toString(), 'ether');
+    const parsedAmount0 = ethers.utils.parseUnits(amount0.toString(), 'ether')
+    const parsedAmount1 = ethers.utils.parseUnits(amount1.toString(), 'ether')
     // Approves amounts
-    let tx;
-    tx = await token0Contract.connect(signer).approve(nmn.address, parsedAmount0);
-    await tx.wait();
-    tx = await token1Contract.connect(signer).approve(nmn.address, parsedAmount1);
-    await tx.wait();
+    let tx
+    tx = await token0Contract.connect(signer).approve(nmn.address, parsedAmount0)
+    await tx.wait()
+    tx = await token1Contract.connect(signer).approve(nmn.address, parsedAmount1)
+    await tx.wait()
 
     // Calls addLiquidity
-    tx = await nmn.connect(signer).addLiquidity(coinIndex0, parsedAmount0, coinIndex1, parsedAmount1);
-    await tx.wait();
+    tx = await nmn.connect(signer).addLiquidity(coinIndex0, parsedAmount0, coinIndex1, parsedAmount1)
+    await tx.wait()
 
-    dispatch(depositSuccess(tx.hash));
+    dispatch(depositSuccess(tx.hash))
   } catch (error) {
-    console.error(error);
-    dispatch(depositFail());
+    console.error(error)
+    dispatch(depositFail())
   }
 }
 
@@ -167,19 +161,19 @@ export const addLiquidity = async (provider, nmn, token0Contract, token1Contract
 // // REMOVE LIQUDITY
 export const removeLiquidity = async (provider, nmn, coinIndex0, coinIndex1, sharesAmount, dispatch) => {
   try {
-    dispatch(withdrawRequest());
-    const signer = await provider.getSigner();
+    dispatch(withdrawRequest())
+    const signer = await provider.getSigner()
     // Formats to BigNumbers
     const parsedShares = ethers.utils.parseUnits(sharesAmount.toString(), 'ether');
 
     // Calls removeLiquidity
-    const tx = await nmn.connect(signer).removeLiquidity(coinIndex0, coinIndex1, parsedShares);
-    await tx.wait();
+    const tx = await nmn.connect(signer).removeLiquidity(coinIndex0, coinIndex1, parsedShares)
+    await tx.wait()
 
-    dispatch(withdrawSuccess(tx.hash));
+    dispatch(withdrawSuccess(tx.hash))
   } catch (error) {
-    console.error(error);
-    dispatch(withdrawFail());
+    console.error(error)
+    dispatch(withdrawFail())
   }
 }
 
@@ -188,21 +182,21 @@ export const removeLiquidity = async (provider, nmn, coinIndex0, coinIndex1, sha
 // // SWAP
 export const executeSwap = async (provider, nmn, tokenInContract, coinIndexIn, coinIndexOut, amountIn, dispatch) => {
   try {
-    dispatch(swapRequest());
-    const signer = await provider.getSigner();
-    const parsedAmountIn = ethers.utils.parseUnits(amountIn.toString(), 'ether');
+    dispatch(swapRequest())
+    const signer = await provider.getSigner()
+    const parsedAmountIn = ethers.utils.parseUnits(amountIn.toString(), 'ether')
 
-    let tx = await tokenInContract.connect(signer).approve(nmn.address, parsedAmountIn);
+    let tx = await tokenInContract.connect(signer).approve(nmn.address, parsedAmountIn)
     await tx.wait();
 
     // Call your standardized unified contract logic: swap(coinIn, coinOut, amountIn)
-    tx = await nmn.connect(signer).swap(coinIndexIn, coinIndexOut, parsedAmountIn);
-    await tx.wait();
+    tx = await nmn.connect(signer).swap(coinIndexIn, coinIndexOut, parsedAmountIn)
+    await tx.wait()
 
-    dispatch(swapSuccess(tx.hash));
+    dispatch(swapSuccess(tx.hash))
   } catch (error) {
-    console.error(error);
-    dispatch(swapFail());
+    console.error(error)
+    dispatch(swapFail())
   }
 }
 
@@ -212,17 +206,17 @@ export const executeSwap = async (provider, nmn, tokenInContract, coinIndexIn, c
 // // LOAD ALL SWAPS
 
 export const loadAllSwaps = async (provider, nmn, dispatch) => {
-  const block = await provider.getBlockNumber();
-  const { chainId } = await provider.getNetwork();
-  const fromBlock = config[chainId]?.nmn?.deployBlock ?? 0;
+  const block = await provider.getBlockNumber()
+  const { chainId } = await provider.getNetwork()
+  const fromBlock = config[chainId]?.nmn?.deployBlock ?? 0
 
-  const swapStream = await nmn.queryFilter('Swap', fromBlock, block);
+  const swapStream = await nmn.queryFilter('Swap', fromBlock, block)
   const swaps = swapStream.map(event => ({
     hash: event.transactionHash,
     args: event.args
   }));
 
-  dispatch(swapsLoaded(swaps));
+  dispatch(swapsLoaded(swaps))
 
 }
 
@@ -232,31 +226,31 @@ export const loadAllSwaps = async (provider, nmn, dispatch) => {
 export const loadAllLiquidityEvents = async (provider, nmn, dispatch) => {
   try {
     // 1. Fetch block parameters matching your deployment configurations
-    const block = await provider.getBlockNumber();
-    const { chainId } = await provider.getNetwork();
-    
+    const block = await provider.getBlockNumber()
+    const { chainId } = await provider.getNetwork()
+
     // Check your dynamic deployment checkpoints configuration
-    const fromBlock = config[chainId]?.nmn?.deploymentBlock ?? 0;
+    const fromBlock = config[chainId]?.nmn?.deploymentBlock ?? 0
 
     // 2. Setup simultaneous querying streams across all 21 pools
-    const addStream = await nmn.queryFilter('LiquidityAdded', fromBlock, block);
-    const removeStream = await nmn.queryFilter('LiquidityRemoved', fromBlock, block);
+    const addStream = await nmn.queryFilter('LiquidityAdded', fromBlock, block)
+    const removeStream = await nmn.queryFilter('LiquidityRemoved', fromBlock, block)
 
     // 3. Decorate results arrays uniformly to safely extract event arguments
     const additions = addStream.map(event => ({
       hash: event.transactionHash,
       args: event.args
-    }));
+    }))
 
     const removals = removeStream.map(event => ({
       hash: event.transactionHash,
       args: event.args
-    }));
+    }))
 
     // 4. Fire action directly to push the datasets cleanly into Redux memory
-    dispatch(liquidityHistoryLoaded({ additions, removals }));
+    dispatch(liquidityHistoryLoaded({ additions, removals }))
 
   } catch (error) {
-    console.error("Failed to compile background decentralized liquidity logs:", error);
+    console.error("Failed to compile background decentralized liquidity logs:", error)
   }
 }

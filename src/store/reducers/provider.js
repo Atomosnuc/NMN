@@ -1,9 +1,9 @@
-import { createSlice } from "@reduxjs/toolkit";
+import { createSlice } from "@reduxjs/toolkit"
 
 export const provider = createSlice({
   name: 'provider',
   initialState: {
-    connection : null,
+    connection: null,
     chainId: null,
     account: null
   },
@@ -20,6 +20,6 @@ export const provider = createSlice({
   }
 })
 
-export const { setProvider, setNetwork, setAccount} = provider.actions
+export const { setProvider, setNetwork, setAccount } = provider.actions
 
 export default provider.reducer

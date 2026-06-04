@@ -2,17 +2,17 @@ import { createSelector } from "reselect"
 import { ethers } from "ethers"
 
 const tokens = state => state.tokens.contracts
-const swaps = state => state.nmn.swaps // 
+const swaps = state => state.nmn.swaps
 
-const getLiquidityHistory = state => state.nmn.liquidityHistory;
-const getActiveAccount = state => state.provider.account;
-const getPoolData = state => state.nmn.poolData;
+const getLiquidityHistory = state => state.nmn.liquidityHistory
+const getActiveAccount = state => state.provider.account
+const getPoolData = state => state.nmn.poolData
 
 // Selectors to pass the active user dropdown selections dynamically into the chart pipeline
 export const selectActivePair = (state, inputIndex, outputIndex) => ({ inputIndex, outputIndex })
 
 export const chartSelector = createSelector(
-  [swaps, tokens, selectActivePair], 
+  [swaps, tokens, selectActivePair],
   (swaps, tokens, activePair) => {
     const { inputIndex, outputIndex } = activePair
 
@@ -37,7 +37,7 @@ export const chartSelector = createSelector(
       return (
         (currentIn === tokenInAddress && currentOut === tokenOutAddress) ||
         (currentIn === tokenOutAddress && currentOut === tokenInAddress)
-      );
+      )
     })
 
     // 2. Sort swaps by date ascending to build the historical time-series chart
@@ -47,13 +47,13 @@ export const chartSelector = createSelector(
     const decoratedSwaps = filteredSwaps.map((s) => {
       const amountIn = Number(ethers.utils.formatUnits(s.args.amountIn, 'ether'))
       const amountOut = Number(ethers.utils.formatUnits(s.args.amountOut, 'ether'))
-      
+
       let rate;
       // Define the base token pricing perspective depending on execution direction
       if (s.args.tokenIn.toLowerCase() === tokenInAddress) {
-        rate = amountIn !== 0 ? amountOut / amountIn : 0;
+        rate = amountIn !== 0 ? amountOut / amountIn : 0
       } else {
-        rate = amountOut !== 0 ? amountIn / amountOut : 0;
+        rate = amountOut !== 0 ? amountIn / amountOut : 0
       }
 
       // Round to 5 decimal precision
@@ -83,22 +83,22 @@ export const chartSelector = createSelector(
 
 // --- GLOBAL DE-SCALING UTILITY ---
 const parseNum = (rawVal) => {
-  if (rawVal === undefined || rawVal === null || rawVal === '') return 0;
-  
-  const valStr = rawVal.toString().trim();
+  if (rawVal === undefined || rawVal === null || rawVal === '') return 0
+
+  const valStr = rawVal.toString().trim()
 
   // If it already contains a decimal point, it is already formatted!
   if (valStr.includes('.')) {
-    return Number(valStr);
+    return Number(valStr)
   }
 
   // Otherwise, safely treat it as an unscaled 18-decimal blockchain BigNumber string
   try {
-    return Number(ethers.utils.formatEther(valStr));
+    return Number(ethers.utils.formatEther(valStr))
   } catch (error) {
     // Fallback if it is a simple plain string integer (e.g. "100")
-    const parsed = Number(valStr);
-    return isNaN(parsed) ? 0 : parsed;
+    const parsed = Number(valStr)
+    return isNaN(parsed) ? 0 : parsed
   }
 };
 
@@ -110,31 +110,31 @@ export const liquidityPerformanceSelector = createSelector(
 
     // Guard Clause: Exit instantly if parameters are missing or incomplete
     if (
-      !tokensList || 
-      tokensList.length === 0 || 
-      inputIndex === null || 
-      outputIndex === null || 
-      inputIndex === outputIndex || 
+      !tokensList ||
+      tokensList.length === 0 ||
+      inputIndex === null ||
+      outputIndex === null ||
+      inputIndex === outputIndex ||
       !account ||
       !history
     ) {
-      return { trackedUserSqrtK: 0, livePoolSqrtK: 0, roiPercentage: '0.0000%' };
+      return { trackedUserSqrtK: 0, livePoolSqrtK: 0, roiPercentage: '0.0000%' }
     }
 
     // 1. Sort indices numerically to match your contract's strict Enum configuration order
-    const lowIndex = Math.min(inputIndex, outputIndex);
-    const highIndex = Math.max(inputIndex, outputIndex);
+    const lowIndex = Math.min(inputIndex, outputIndex)
+    const highIndex = Math.max(inputIndex, outputIndex)
 
-    const sortedAddr0 = tokensList[lowIndex].address.toLowerCase();
-    const sortedAddr1 = tokensList[highIndex].address.toLowerCase();
+    const sortedAddr0 = tokensList[lowIndex].address.toLowerCase()
+    const sortedAddr1 = tokensList[highIndex].address.toLowerCase()
 
     // 2. Filter additions for the selected account and pool pair
     const formattedAdd = (history.additions || [])
       .filter(log => {
-        const matchesUser = log.args.user?.toLowerCase() === account.toLowerCase();
-        const matchesToken0 = log.args.token0?.toLowerCase() === sortedAddr0;
-        const matchesToken1 = log.args.token1?.toLowerCase() === sortedAddr1;
-        return matchesUser && matchesToken0 && matchesToken1;
+        const matchesUser = log.args.user?.toLowerCase() === account.toLowerCase()
+        const matchesToken0 = log.args.token0?.toLowerCase() === sortedAddr0
+        const matchesToken1 = log.args.token1?.toLowerCase() === sortedAddr1
+        return matchesUser && matchesToken0 && matchesToken1
       })
       .map(log => ({
         type: 'LiquidityAdded',
@@ -146,78 +146,78 @@ export const liquidityPerformanceSelector = createSelector(
     // 3. Filter removals for the selected account and pool pair
     const formattedRemove = (history.removals || [])
       .filter(log => {
-        const matchesUser = log.args.user?.toLowerCase() === account.toLowerCase();
-        const matchesToken0 = log.args.token0?.toLowerCase() === sortedAddr0;
-        const matchesToken1 = log.args.token1?.toLowerCase() === sortedAddr1;
-        return matchesUser && matchesToken0 && matchesToken1;
+        const matchesUser = log.args.user?.toLowerCase() === account.toLowerCase()
+        const matchesToken0 = log.args.token0?.toLowerCase() === sortedAddr0
+        const matchesToken1 = log.args.token1?.toLowerCase() === sortedAddr1
+        return matchesUser && matchesToken0 && matchesToken1
       })
       .map(log => ({
         type: 'LiquidityRemoved',
         userSharesRemaining: log.args.userSharesRemaining.toString(),
         timestamp: Number(log.args.timestamp)
-      }));
+      }))
 
     // 4. Combine and chronologically sort events
-    const fullHistory = [...formattedAdd, ...formattedRemove].sort((a, b) => a.timestamp - b.timestamp);
+    const fullHistory = [...formattedAdd, ...formattedRemove].sort((a, b) => a.timestamp - b.timestamp)
 
     // 5. Run the core off-chain geometric share-weighted rolling average loop
-    let userShares = 0;
-    let userSqrtK = 0;
-    let lastEventPoolSqrtK = 0;
+    let userShares = 0
+    let userSqrtK = 0
+    let lastEventPoolSqrtK = 0
 
     for (const event of fullHistory) {
       if (event.type === 'LiquidityAdded') {
-        const mintedSharesNum = parseNum(event.shareAmountMinted);
-        const poolSqrtKNum = parseNum(event.currentSqrtK);
-        lastEventPoolSqrtK = poolSqrtKNum;
+        const mintedSharesNum = parseNum(event.shareAmountMinted)
+        const poolSqrtKNum = parseNum(event.currentSqrtK)
+        lastEventPoolSqrtK = poolSqrtKNum
 
         if (userShares === 0 || userSqrtK === 0) {
-          userSqrtK = poolSqrtKNum;
-          userShares = mintedSharesNum;
+          userSqrtK = poolSqrtKNum
+          userShares = mintedSharesNum
         } else {
-          const totalNewSharesNum = userShares + mintedSharesNum;
-          const logAvg = ((userShares * Math.log(userSqrtK)) + (mintedSharesNum * Math.log(poolSqrtKNum))) / totalNewSharesNum;
-          userSqrtK = Math.exp(logAvg);
-          userShares = totalNewSharesNum;
+          const totalNewSharesNum = userShares + mintedSharesNum
+          const logAvg = ((userShares * Math.log(userSqrtK)) + (mintedSharesNum * Math.log(poolSqrtKNum))) / totalNewSharesNum
+          userSqrtK = Math.exp(logAvg)
+          userShares = totalNewSharesNum
         }
-      } 
+      }
       else if (event.type === 'LiquidityRemoved') {
-        const sharesRemainingNum = parseNum(event.userSharesRemaining);
+        const sharesRemainingNum = parseNum(event.userSharesRemaining)
         if (sharesRemainingNum <= 0) {
-          userShares = 0;
-          userSqrtK = 0;
-          lastEventPoolSqrtK = 0;
+          userShares = 0
+          userSqrtK = 0
+          lastEventPoolSqrtK = 0
         } else {
-          userShares = sharesRemainingNum;
+          userShares = sharesRemainingNum
         }
       }
     }
 
     // 6. Calculate the live checkpoint using your pre-parsed Redux state
-    const poolId = `${lowIndex}-${highIndex}`;
-    const currentPool = poolData[poolId];
-    
-    let livePoolSqrtKNum = 0;
+    const poolId = `${lowIndex}-${highIndex}`
+    const currentPool = poolData[poolId]
+
+    let livePoolSqrtKNum = 0
     if (currentPool && currentPool.reserve0 && currentPool.reserve1) {
-      const res0Num = parseNum(currentPool.reserve0);
-      const res1Num = parseNum(currentPool.reserve1);
-      livePoolSqrtKNum = Math.sqrt(res0Num * res1Num);
+      const res0Num = parseNum(currentPool.reserve0)
+      const res1Num = parseNum(currentPool.reserve1)
+      livePoolSqrtKNum = Math.sqrt(res0Num * res1Num)
     }
 
     // Handle initial rendering scale fallback logic safely
     if (livePoolSqrtKNum < (userSqrtK / 2) && lastEventPoolSqrtK > 0) {
-      livePoolSqrtKNum = lastEventPoolSqrtK;
+      livePoolSqrtKNum = lastEventPoolSqrtK
     }
 
     let growthFactor = 0;
     if (userSqrtK > 0) {
-      growthFactor = livePoolSqrtKNum / userSqrtK;
+      growthFactor = livePoolSqrtKNum / userSqrtK
     }
 
     return {
       trackedUserSqrtK: userSqrtK,
       livePoolSqrtK: livePoolSqrtKNum,
       roiPercentage: growthFactor > 0 ? ((growthFactor - 1) * 100).toFixed(4) + "%" : "0.0000%"
-    };
+    }
   }
-);
+)

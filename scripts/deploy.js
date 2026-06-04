@@ -1,12 +1,12 @@
-const hre = require("hardhat");
-const fs = require("fs");
-const path = require("path");
+const hre = require("hardhat")
+const fs = require("fs")
+const path = require("path")
 
 async function main() {
-  const Token = await hre.ethers.getContractFactory("Token");
-  
-  const { chainId } = await hre.ethers.provider.getNetwork();
-  console.log(`Connected to Network Chain ID: ${chainId}\n`);
+  const Token = await hre.ethers.getContractFactory("Token")
+
+  const { chainId } = await hre.ethers.provider.getNetwork()
+  console.log(`Connected to Network Chain ID: ${chainId}\n`)
 
   const tokenConfigs = [
     { name: "Mirian Token", symbol: "MRN", totalSupply: "10000000", configKey: "mirian" },
@@ -16,66 +16,65 @@ async function main() {
     { name: "Penny Token", symbol: "PENNY", totalSupply: "10000000", configKey: "penny" },
     { name: "Brass Token", symbol: "BRASS", totalSupply: "10000000", configKey: "brass" },
     { name: "Copper Token", symbol: "COP", totalSupply: "10000000", configKey: "copper" }
-  ];
+  ]
 
-  const networkData = {};
-  const deployedTokenAddresses = [];
+  const networkData = {}
+  const deployedTokenAddresses = []
 
-  console.log("Starting deployment of tokens...\n");
-  
-  // Using 'item' here completely solves the variable shadowing bug!
+  console.log("Starting deployment of tokens...\n")
+
   for (const item of tokenConfigs) {
     const token = await Token.deploy(
       item.name,
       item.symbol,
       item.totalSupply
-    );
-    await token.deployed();
+    )
+    await token.deployed()
 
-    const receipt = await token.deployTransaction.wait();
+    const receipt = await token.deployTransaction.wait()
 
-    console.log(`${item.name} (${item.symbol}) deployed to: ${token.address}`);
-    console.log(`   -> Deployment Block Number: ${receipt.blockNumber}`);
-    
-    networkData[item.configKey] = { address: token.address };
-    deployedTokenAddresses.push(token.address);
+    console.log(`${item.name} (${item.symbol}) deployed to: ${token.address}`)
+    console.log(`   -> Deployment Block Number: ${receipt.blockNumber}`)
+
+    networkData[item.configKey] = { address: token.address }
+    deployedTokenAddresses.push(token.address)
   }
 
-  console.log("\nAll tokens deployed successfully. Initializing NMN ...\n");
+  console.log("\nAll tokens deployed successfully. Initializing NMN ...\n")
 
-  const NMN = await hre.ethers.getContractFactory("NMN");
-  const nmn = await NMN.deploy(deployedTokenAddresses);
-  await nmn.deployed();
-  const result = await nmn.deployTransaction.wait();
+  const NMN = await hre.ethers.getContractFactory("NMN")
+  const nmn = await NMN.deploy(deployedTokenAddresses)
+  await nmn.deployed()
+  const result = await nmn.deployTransaction.wait()
 
   console.log(`=======================================================================================`);
-  console.log(`NMN contract successfully deployed to: ${nmn.address}`);
-  console.log(`   Deployment Block Number: ${result.blockNumber}`);
+  console.log(`NMN contract successfully deployed to: ${nmn.address}`)
+  console.log(`   Deployment Block Number: ${result.blockNumber}`)
   console.log(`=======================================================================================\n`);
 
   networkData["nmn"] = {
     address: nmn.address,
     deploymentBlock: result.blockNumber
-  };
+  }
 
-  console.log("Writing fresh, non-shadowed entries to config.json...");
-  const configPath = path.resolve(__dirname, "../src/config.json");
-  
-  let currentConfig = {};
+  console.log("Writing fresh, non-shadowed entries to config.json...")
+  const configPath = path.resolve(__dirname, "../src/config.json")
+
+  let currentConfig = {}
   if (fs.existsSync(configPath)) {
-    const rawData = fs.readFileSync(configPath, "utf8");
+    const rawData = fs.readFileSync(configPath, "utf8")
     if (rawData.trim().length > 0) {
-      currentConfig = JSON.parse(rawData);
+      currentConfig = JSON.parse(rawData)
     }
   }
 
-  currentConfig[chainId.toString()] = networkData;
+  currentConfig[chainId.toString()] = networkData
 
-  fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2), "utf8");
-  console.log(`🎉 Configuration cleanly saved at: ${configPath}\n`);
+  fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2), "utf8")
+  console.log(`🎉 Configuration cleanly saved at: ${configPath}\n`)
 }
 
 main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+  console.error(error)
+  process.exitCode = 1
+})

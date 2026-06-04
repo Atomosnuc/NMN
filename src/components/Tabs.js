@@ -17,7 +17,7 @@ const Tabs = () => {
         <Nav.Link>Charts</Nav.Link>
       </LinkContainer>
     </Nav>
-  );
+  )
 }
 
-export default Tabs;
+export default Tabs

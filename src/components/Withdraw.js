@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import Card from 'react-bootstrap/Card';
-import Form from 'react-bootstrap/Form';
-import InputGroup from 'react-bootstrap/InputGroup';
-import DropdownButton from 'react-bootstrap/DropdownButton';
-import DropdownItem from 'react-bootstrap/esm/DropdownItem';
-import Button from 'react-bootstrap/Button';
-import Row from 'react-bootstrap/Row';
-import Spinner from 'react-bootstrap/Spinner';
-import { ethers } from 'ethers';
+import Card from 'react-bootstrap/Card'
+import Form from 'react-bootstrap/Form'
+import InputGroup from 'react-bootstrap/InputGroup'
+import DropdownButton from 'react-bootstrap/DropdownButton'
+import DropdownItem from 'react-bootstrap/esm/DropdownItem'
+import Button from 'react-bootstrap/Button'
+import Row from 'react-bootstrap/Row'
+import Spinner from 'react-bootstrap/Spinner'
+import { ethers } from 'ethers'
 
-import Alert from './Alert';
+import Alert from './Alert'
 import { getPoolId } from '../store/reducers/nmn'
 import { removeLiquidity, loadAllPoolsAndBalances, loadAllLiquidityEvents } from '../store/interactions'
 import { liquidityPerformanceSelector } from '../store/selectors'
@@ -19,12 +19,12 @@ import { liquidityPerformanceSelector } from '../store/selectors'
 const parseNum = (rawVal) => {
   if (rawVal === undefined || rawVal === null || rawVal === '') return 0;
   const valStr = rawVal.toString().trim();
-  if (valStr.includes('.')) return Number(valStr);
+  if (valStr.includes('.')) return Number(valStr)
   try {
-    return Number(ethers.utils.formatEther(valStr));
+    return Number(ethers.utils.formatEther(valStr))
   } catch {
-    const parsed = Number(valStr);
-    return isNaN(parsed) ? 0 : parsed;
+    const parsed = Number(valStr)
+    return isNaN(parsed) ? 0 : parsed
   }
 };
 
@@ -139,7 +139,7 @@ const Withdraw = () => {
 
   const getButtonText = () => {
     if (isInsufficientShares) {
-      return "Insufficient Shares Balance";
+      return "Insufficient Shares Balance"
     }
     return "Withdraw Liquidity"
   }
@@ -303,4 +303,4 @@ const Withdraw = () => {
   );
 }
 
-export default Withdraw;
+export default Withdraw
