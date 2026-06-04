@@ -127,22 +127,6 @@ contract NMN is Ownable {
   
     return (pools[coin0][coin1]);
   }
-
-  // CALCULATE FUNCTIONS
-
-  function sqrt(uint256 y) internal pure returns (uint256 z) {
-    if (y > 3) {
-      z = y;
-      uint256 x = y / 2 + 1;
-      while (x < z) {
-        z = x;
-        x = (y / x + x) / 2;
-      }
-    } else if (y != 0) {
-      z = 1;
-    }
-    // If y == 0,  returns z = 0
-  }
   
   function calculateLiquidityAmount(Coin _coin0, Coin _coin1,  uint256 _coin0Amount)
     public view returns(uint256 coin1Amount) 
@@ -416,64 +400,5 @@ contract NMN is Ownable {
     // transfer _coinOut from contract to user wallet
     require(tokenOut.transfer(msg.sender, coinOutAmount),
     string(abi.encodePacked("failed to transfer ", tokenOut.name())));
-
-
-    // // Calculate coin1Amount
-    // uint256 feeAmount;
-    // (coinOutAmount, feeAmount, ) = calculateAmountOut(_coinIn, _coinOut, _coinInAmount);
-    
-    // (Coin coin0, Coin coin1) = sortCoins(_coinIn, _coinOut);
-    // Pool storage pool = pools[coin0][coin1];
-
-    // Token tokenIn = Token(tokens[uint256(_coinIn)]);
-    // Token tokenOut = Token(tokens[uint256(_coinOut)]);
-
-    // // Do swap
-    // // 1. transfer _coinIn out of user wallet to contract
-    // require(
-    //   tokenIn.transferFrom(msg.sender, address(this), _coinInAmount),
-    //   string(abi.encodePacked("failed to transfer ", tokenIn.name()))
-    // );
-
-    // // 2. make sure sure sqrtK does not gets smaller
-    // uint256 res0 = pool.reserve0;
-    // uint256 res1 = pool.reserve1;
-    // uint256 sqrtKBefore = pool.sqrtK;
-
-    // if (_coinIn == coin0) {
-    //   res0 += _coinInAmount;
-    //   unchecked { res1 -= coinOutAmount; }
-    // } else {
-    //   res1 += _coinInAmount;
-    //   unchecked { res0 -= coinOutAmount; }
-    // }
-
-    // uint256 sqrtKAfter = sqrt(res0 * res1);
-    // if (sqrtKAfter < sqrtKBefore) revert InvariantViolated();
-
-    
-    // // 3. update pool
-    // pool.reserve0 = res0;
-    // pool.reserve1 = res1;
-    // pool.sqrtK = sqrtKAfter;
-
-    // // 4. transfer _coinOut from contract to user wallet
-    // require(
-    //   tokenOut.transfer(msg.sender, coinOutAmount),
-    //   string(abi.encodePacked("failed to transfer ", tokenOut.name()))
-    // );
-
-    // emit Swap(
-    //   msg.sender,
-    //   address(tokenIn),
-    //   address(tokenOut),
-    //   _coinInAmount,
-    //   coinOutAmount,
-    //   feeAmount,
-    //   pool.reserve0,
-    //   pool.reserve1,
-    //   pool.sqrtK,
-    //   block.timestamp
-    // );
   }
 }
