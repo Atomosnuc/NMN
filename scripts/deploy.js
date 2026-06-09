@@ -1,77 +1,85 @@
 const hre = require("hardhat")
-const fs = require("fs")
-const path = require("path")
+
+const {
+  CONFIG_PATH,
+  SEPOLIA_CHAIN_ID,
+  TOKEN_CONFIGS,
+  confirmationsFor,
+  loadConfig,
+  normalizeChainId,
+  saveConfig,
+  waitForTransaction
+} = require("./helpers")
 
 async function main() {
+  const [deployer] = await hre.ethers.getSigners()
+  if (!deployer) {
+    throw new Error("No deployer signer was found. Check your network account configuration.")
+  }
+
+  const network = await hre.ethers.provider.getNetwork()
+  const chainId = normalizeChainId(network.chainId)
+  const networkKey = chainId.toString()
+  const confirmations = confirmationsFor(chainId)
+
+  if (hre.network.name === "sepolia" && chainId !== SEPOLIA_CHAIN_ID) {
+    throw new Error(`Expected Sepolia chain ID ${SEPOLIA_CHAIN_ID}, but connected to ${chainId}`)
+  }
+
+  const balance = await deployer.getBalance()
+
+  console.log(`Connected to ${hre.network.name} chain ID: ${chainId}`)
+  console.log(`Deployer: ${deployer.address}`)
+  console.log(`Deployer balance: ${hre.ethers.utils.formatEther(balance)} ETH`)
+  console.log(`Transaction confirmations: ${confirmations}\n`)
+
   const Token = await hre.ethers.getContractFactory("Token")
-
-  const { chainId } = await hre.ethers.provider.getNetwork()
-  console.log(`Connected to Network Chain ID: ${chainId}\n`)
-
-  const tokenConfigs = [
-    { name: "Mirian Token", symbol: "MRN", totalSupply: "10000000", configKey: "mirian" },
-    { name: "Castar Token", symbol: "CSTR", totalSupply: "10000000", configKey: "castar" },
-    { name: "Tharni Token", symbol: "TRN", totalSupply: "10000000", configKey: "tharni" },
-    { name: "Pony Token", symbol: "PONY", totalSupply: "10000000", configKey: "pony" },
-    { name: "Penny Token", symbol: "PENNY", totalSupply: "10000000", configKey: "penny" },
-    { name: "Brass Token", symbol: "BRASS", totalSupply: "10000000", configKey: "brass" },
-    { name: "Copper Token", symbol: "COP", totalSupply: "10000000", configKey: "copper" }
-  ]
-
   const networkData = {}
   const deployedTokenAddresses = []
 
-  console.log("Starting deployment of tokens...\n")
+  console.log("Starting token deployment...\n")
 
-  for (const item of tokenConfigs) {
+  for (const item of TOKEN_CONFIGS) {
     const token = await Token.deploy(
       item.name,
       item.symbol,
       item.totalSupply
     )
-    await token.deployed()
-
-    const receipt = await token.deployTransaction.wait()
+    const receipt = await waitForTransaction(token.deployTransaction, chainId)
 
     console.log(`${item.name} (${item.symbol}) deployed to: ${token.address}`)
-    console.log(`   -> Deployment Block Number: ${receipt.blockNumber}`)
+    console.log(`   Deployment block: ${receipt.blockNumber}`)
 
-    networkData[item.configKey] = { address: token.address }
+    networkData[item.configKey] = {
+      address: token.address,
+      deploymentBlock: receipt.blockNumber
+    }
     deployedTokenAddresses.push(token.address)
   }
 
-  console.log("\nAll tokens deployed successfully. Initializing NMN ...\n")
+  console.log("\nAll tokens deployed. Deploying NMN...\n")
 
   const NMN = await hre.ethers.getContractFactory("NMN")
   const nmn = await NMN.deploy(deployedTokenAddresses)
-  await nmn.deployed()
-  const result = await nmn.deployTransaction.wait()
+  const nmnReceipt = await waitForTransaction(nmn.deployTransaction, chainId)
 
-  console.log(`=======================================================================================`);
-  console.log(`NMN contract successfully deployed to: ${nmn.address}`)
-  console.log(`   Deployment Block Number: ${result.blockNumber}`)
-  console.log(`=======================================================================================\n`);
+  console.log("============================================================")
+  console.log(`NMN deployed to: ${nmn.address}`)
+  console.log(`Deployment block: ${nmnReceipt.blockNumber}`)
+  console.log("============================================================\n")
 
-  networkData["nmn"] = {
+  networkData.nmn = {
     address: nmn.address,
-    deploymentBlock: result.blockNumber
+    deploymentBlock: nmnReceipt.blockNumber,
+    deployBlock: nmnReceipt.blockNumber
   }
 
-  console.log("Writing fresh, non-shadowed entries to config.json...")
-  const configPath = path.resolve(__dirname, "../src/config.json")
+  const currentConfig = loadConfig()
+  currentConfig[networkKey] = networkData
+  saveConfig(currentConfig)
 
-  let currentConfig = {}
-  if (fs.existsSync(configPath)) {
-    const rawData = fs.readFileSync(configPath, "utf8")
-    if (rawData.trim().length > 0) {
-      currentConfig = JSON.parse(rawData)
-    }
-  }
-
-  currentConfig[chainId.toString()] = networkData
-
-  fs.writeFileSync(configPath, JSON.stringify(currentConfig, null, 2), "utf8")
-  console.log(`🎉 Configuration cleanly saved at: ${configPath}\n`)
+  console.log(`Configuration saved to: ${CONFIG_PATH}`)
+  console.log(`Network config key: ${networkKey}\n`)
 }
 
 main().catch((error) => {

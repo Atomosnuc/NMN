@@ -1,29 +1,72 @@
 {
   "31337": {
     "mirian": {
-      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "deploymentBlock": 1
     },
     "castar": {
-      "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "deploymentBlock": 2
     },
     "tharni": {
-      "address": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+      "address": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "deploymentBlock": 3
     },
     "pony": {
-      "address": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+      "address": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+      "deploymentBlock": 4
     },
     "penny": {
-      "address": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9"
+      "address": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+      "deploymentBlock": 5
     },
     "brass": {
-      "address": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"
+      "address": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+      "deploymentBlock": 6
     },
     "copper": {
-      "address": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+      "address": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+      "deploymentBlock": 7
     },
     "nmn": {
       "address": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
-      "deploymentBlock": 8
+      "deploymentBlock": 8,
+      "deployBlock": 8
+    }
+  },
+  "11155111": {
+    "mirian": {
+      "address": "0x05d1bEAc4fC4bF949E9b52d6457a3aC5D7C358f4",
+      "deploymentBlock": 10989875
+    },
+    "castar": {
+      "address": "0x07d6C805b329a8C0EEe0072220B7C8cE03F02eb4",
+      "deploymentBlock": 10989877
+    },
+    "tharni": {
+      "address": "0x31Aa8c1ba37Eb9c4660B78A2e09353De3CA46841",
+      "deploymentBlock": 10989879
+    },
+    "pony": {
+      "address": "0xE659B4397AfeFbf9A312f7BdB506F8D71BB52dee",
+      "deploymentBlock": 10989881
+    },
+    "penny": {
+      "address": "0xacfD5d92d8Fb22541B03201CCcE260De97Bac36E",
+      "deploymentBlock": 10989885
+    },
+    "brass": {
+      "address": "0xB01F45dc777747cA9a416f10483098B6b961aAcE",
+      "deploymentBlock": 10989887
+    },
+    "copper": {
+      "address": "0xdb37715e36E49d50577F9447Ca46AfBAFD2A313a",
+      "deploymentBlock": 10989889
+    },
+    "nmn": {
+      "address": "0xaa37a51936ff3a38634103b4f39e9bDC28ea23eC",
+      "deploymentBlock": 10989891,
+      "deployBlock": 10989891
     }
   }
 }

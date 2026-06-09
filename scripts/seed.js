@@ -1,176 +1,227 @@
-// We require the Hardhat Runtime Environment explicitly here. This is optional
-// but useful for running the script in a standalone fashion through `node <script>`.
-//
-// You can also run a script with `npx hardhat run <script>`. If you do that, Hardhat
-// will compile your contracts, add the Hardhat Runtime Environment's members to the
-// global scope, and execute the script.
-const hre = require("hardhat");
-const config = require('../src/config.json')
+const hre = require("hardhat")
 
-const tokens = (n) => {
-  return ethers.utils.parseUnits(n.toString(), 'ether')
+const {
+  TOKEN_CONFIGS,
+  getBasisPointsEnv,
+  getNetworkConfig,
+  getPositiveIntegerEnv,
+  isAlreadyInitializedError,
+  isLocalChain,
+  loadConfig,
+  normalizeChainId,
+  waitForTransaction
+} = require("./helpers")
+
+const TOKEN_NAMES = TOKEN_CONFIGS.map((token) => token.name)
+const TARGET_POOL_AMOUNTS = [1000, 1000, 4000, 1000, 4000, 64000, 256000]
+
+function tokens(n) {
+  return hre.ethers.utils.parseUnits(n.toString(), "ether")
 }
 
-const shares = tokens
+function scaledTokens(n, basisPoints) {
+  return tokens(n).mul(basisPoints).div(10000)
+}
 
-async function main() {
- // 1. Fetch 5 accounts
-  const signers = await ethers.getSigners()
-  const deployer = signers[0];
-  const investor1 = signers[1]
-  const investor2 = signers[2]
-  const investor3 = signers[3]
-  const investor4 = signers[4]
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
-  const investors = [investor1, investor2, investor3, investor4]
+async function ensureMaxApproval(token, owner, spender, chainId) {
+  const currentAllowance = await token.allowance(owner.address, spender)
+  const maxAllowance = hre.ethers.constants.MaxUint256
 
-  console.log(`============================================`)
-  console.log(`Deployer Account: ${deployer.address}`)
-  console.log(`Investor 1: ${investor1.address}`)
-  console.log(`Investor 2: ${investor2.address}`)
-  console.log(`Investor 3: ${investor3.address}`)
-  console.log(`Investor 4: ${investor4.address}`)
-  console.log(`============================================\n`)
-
-  // 2. Fetch Network
-  const { chainId } = await hre.ethers.provider.getNetwork()
-  console.log(`Connected to Chain ID: ${chainId}`)
-
-  // 3. Fetch all tokens and NMN contract
-  console.log("\nFetching Token instances from config.json...")
-  const mirian = await hre.ethers
-  .getContractAt('Token', config[chainId].mirian.address)
-  const castar = await hre.ethers
-  .getContractAt('Token', config[chainId].castar.address)
-  const tharni = await hre.ethers
-  .getContractAt('Token', config[chainId].tharni.address)
-  const pony   = await hre.ethers
-  .getContractAt('Token', config[chainId].pony.address)
-  const penny  = await hre.ethers
-  .getContractAt('Token', config[chainId].penny.address)
-  const brass  = await hre.ethers
-  .getContractAt('Token', config[chainId].brass.address)
-  const copper = await hre.ethers
-  .getContractAt('Token', config[chainId].copper.address)
-
-  const tokenList = [mirian, castar, tharni, pony, penny, brass, copper]
-  const tokenNames = ["Mirian", "Castar", "Tharni", "Silver Pony", "Silver Penny", "Brass Coin", "Copper Coin"]
-
-  for (let i = 0; i < tokenList.length; i++) {
-    console.log(`  ${tokenNames[i].toUpperCase()} Token fetched: ${tokenList[i].address}`)
+  if (currentAllowance.gt(maxAllowance.div(2))) {
+    return
   }
 
-  const nmn = await hre.ethers.getContractAt('NMN', config[chainId].nmn.address)
-  console.log(`\nNMN fetched: ${nmn.address}\n`);
+  const tx = await token.connect(owner).approve(spender, maxAllowance)
+  await waitForTransaction(tx, chainId)
+  console.log(`  Approved ${await token.symbol()} for NMN`)
+}
 
-  // 4. Distribute 100 tokens from each token to all investors
-  console.log("Distributing 100 tokens of each type to investors...");
-  const distributeAmount = tokens(100);
+async function loadContracts(networkConfig) {
+  const tokenList = []
 
-  for (let t = 0; t < tokenList.length; t++) {
-    const token = tokenList[t]
-    for (let inv = 0; inv < investors.length; inv++) {
-      const investor = investors[inv];
-      const tx = await token.connect(deployer).
-      transfer(investor.address, distributeAmount)
-      await tx.wait()
-      // console.log(`  Sent 100 ${tokenNames[t]} to Investor ${inv + 1} (${investor.address})`)
+  for (const tokenConfig of TOKEN_CONFIGS) {
+    const entry = networkConfig[tokenConfig.configKey]
+    if (!entry || !entry.address) {
+      throw new Error(`Missing ${tokenConfig.configKey} address in src/config.json`)
+    }
+
+    const token = await hre.ethers.getContractAt("Token", entry.address)
+    tokenList.push(token)
+    console.log(`  ${tokenConfig.name}: ${token.address}`)
+  }
+
+  if (!networkConfig.nmn || !networkConfig.nmn.address) {
+    throw new Error("Missing NMN address in src/config.json")
+  }
+
+  const nmn = await hre.ethers.getContractAt("NMN", networkConfig.nmn.address)
+  console.log(`  NMN: ${nmn.address}`)
+
+  return { tokenList, nmn }
+}
+
+async function distributeLocalTokens(tokenList, deployer, investors, chainId) {
+  if (investors.length === 0) return
+
+  console.log("\nDistributing mock tokens to local investor accounts...")
+  const distributeAmount = tokens(100)
+
+  for (const token of tokenList) {
+    for (const investor of investors) {
+      const tx = await token.connect(deployer).transfer(investor.address, distributeAmount)
+      await waitForTransaction(tx, chainId)
     }
   }
+}
 
-  // 5. Approve enough tokens from deployer for all tokens to NMN 
-  console.log("\nApproving tokens from Deployer to NMN contract...");
-  const approveAmount = tokens(5000); 
+async function initializePools(nmn, deployer, tokenList, chainId) {
+  console.log("\nInitializing NMN pools...")
 
-  for (let t = 0; t < tokenList.length; t++) {
-    const token = tokenList[t];
-    const tx = await token.connect(deployer).approve(nmn.address, approveAmount);
-    await tx.wait();
-    // console.log(`  Deployer approved ${tokenNames[t]} to NMN`);
-  }
-
-  // 6. Initialize all unique pools
-  console.log("\nInitializing NMN Pools from Deployer (Owner)...")
   for (let i = 0; i < tokenList.length; i++) {
     for (let j = i + 1; j < tokenList.length; j++) {
       try {
         const tx = await nmn.connect(deployer).initializePool(i, j)
-        await tx.wait();
-        // console.log(`  Pool Initialized: Coin(${i}) <-> Coin(${j})`)
+        await waitForTransaction(tx, chainId)
+        console.log(`  Initialized: ${TOKEN_NAMES[i]} <-> ${TOKEN_NAMES[j]}`)
       } catch (error) {
-        console.log(`  Pool Initialization skipped/failed for Coin(${i}) <-> Coin(${j})`)
+        if (!isAlreadyInitializedError(error)) {
+          throw error
+        }
+
+        console.log(`  Already initialized: ${TOKEN_NAMES[i]} <-> ${TOKEN_NAMES[j]}`)
       }
     }
   }
+}
 
-   // 7. Add liquidity to most pools from deployer around tokens(100) each
-  console.log("\nAdding liquidity to pools from Deployer...");
-  const liquidityAmount = tokens(100);
+async function seedLiquidity(nmn, deployer, tokenList, chainId, liquidityBasisPoints) {
+  console.log("\nAdding liquidity to empty pools...")
 
   for (let i = 0; i < tokenList.length; i++) {
     for (let j = i + 1; j < tokenList.length; j++) {
-      // Skips 2 out of 3 pools
-      if ((i + j) % 3 === 0) {
-        console.log(`  [Skipped] Adding liquidity to Coin(${i}) <-> Coin(${j})`);
-        continue;
+      const pool = await nmn.getPoolState(i, j)
+
+      if (pool.totalShares.gt(0)) {
+        console.log(`  Skipped existing liquidity: ${TOKEN_NAMES[i]} <-> ${TOKEN_NAMES[j]}`)
+        continue
       }
 
-      try {
-        const tx = await nmn.connect(deployer).addLiquidity(i, liquidityAmount, j, liquidityAmount);
-        await tx.wait();
-        console.log(`  Liquidity Added: 100 units each into Pool Coin(${i}) <-> Coin(${j})`);
-      } catch (error) {
-        console.log(`  Failed to add liquidity to Pool Coin(${i}) <-> Coin(${j}): ${error.message}`);
-      }
+      const amount0 = scaledTokens(TARGET_POOL_AMOUNTS[i], liquidityBasisPoints)
+      const amount1 = scaledTokens(TARGET_POOL_AMOUNTS[j], liquidityBasisPoints)
+
+      const tx = await nmn.connect(deployer).addLiquidity(i, amount0, j, amount1)
+      await waitForTransaction(tx, chainId)
+      console.log(`  Seeded: ${TOKEN_NAMES[i]} <-> ${TOKEN_NAMES[j]}`)
     }
   }
-
-  // 8. Do 8 to 10 swaps for each investor in active pools
-  console.log("\nExecuting random swaps for investors...");
-  const swapAmount = tokens(5);
-
-  for (let inv = 0; inv < investors.length; inv++) {
-    const investor = investors[inv];
-    const swapsCount = 8 + (inv % 3); 
-    console.log(`Investor ${inv + 1} executing ${swapsCount} swaps:`);
-
-    for (let s = 0; s < swapsCount; s++) {
-      const tokenInIndex = (inv + s) % tokenList.length;
-      let tokenOutIndex = (tokenInIndex + 1) % tokenList.length;
-      // make sure the pool is one of the ones we activated previous
-      if ((tokenInIndex + tokenOutIndex) % 3 === 0) {
-        tokenOutIndex = (tokenOutIndex + 1) % tokenList.length;
-      }
-
-      const tokenIn = tokenList[tokenInIndex];
-      const nameIn = tokenNames[tokenInIndex];
-      const nameOut = tokenNames[tokenOutIndex];
-
-      try {
-        // Investor must approve the nmn contract to pull their tokens before trading
-        const approveTx = await tokenIn.connect(investor).approve(nmn.address, swapAmount)
-        await approveTx.wait();
-
-        const swapTx = await nmn.connect(investor).swap(tokenInIndex, tokenOutIndex, swapAmount)
-        await swapTx.wait();
-        console.log(`  Swap ${s + 1} Success: Swapped 5 ${nameIn} for ${nameOut}`)
-      } catch (error) {
-        console.log(`  Swap ${s + 1} Failed swap: (${nameIn} -> ${nameOut}`);
-      }
-    }
-  }
-
-  console.log("\n================================");
-  console.log("Seed script Finished");
-  console.log("================================\n");
-
-
-
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function simulateSwaps(nmn, deployer, tokenList, chainId, liquidityBasisPoints, swapsPerPool, txDelayMs) {
+  if (swapsPerPool === 0) {
+    console.log("\nSwap simulation skipped. Set SEED_SWAPS_PER_POOL to enable it.")
+    return
+  }
+
+  console.log(`\nRunning ${swapsPerPool} swap simulation transaction(s) per pool...`)
+
+  for (let i = 0; i < tokenList.length; i++) {
+    for (let j = i + 1; j < tokenList.length; j++) {
+      console.log(`  Pool: ${TOKEN_NAMES[i]} <-> ${TOKEN_NAMES[j]}`)
+
+      for (let s = 0; s < swapsPerPool; s++) {
+        const direction = Math.random() < 0.5
+        const coinIndexIn = direction ? i : j
+        const coinIndexOut = direction ? j : i
+        const baseAmount = TARGET_POOL_AMOUNTS[coinIndexIn] * (liquidityBasisPoints / 10000)
+        const randomPercent = Math.random() * (0.022 - 0.002) + 0.002
+        const swapAmountValue = baseAmount * randomPercent
+        const parsedAmountIn = hre.ethers.utils.parseUnits(swapAmountValue.toFixed(6), "ether")
+
+        if (parsedAmountIn.eq(0)) {
+          console.log(`    Trade ${s + 1} skipped: amount rounded to zero`)
+          continue
+        }
+
+        try {
+          const swapTx = await nmn.connect(deployer).swap(coinIndexIn, coinIndexOut, parsedAmountIn)
+          await waitForTransaction(swapTx, chainId)
+          console.log(
+            `    Trade ${s + 1}: swapped ${swapAmountValue.toFixed(4)} ${TOKEN_NAMES[coinIndexIn]}`
+          )
+
+          if (isLocalChain(chainId)) {
+            await hre.ethers.provider.send("evm_mine", [])
+          } else if (txDelayMs > 0) {
+            await sleep(txDelayMs)
+          }
+        } catch (error) {
+          console.log(`    Trade ${s + 1} skipped: ${error.message}`)
+        }
+      }
+    }
+  }
+}
+
+async function main() {
+  const signers = await hre.ethers.getSigners()
+  const deployer = signers[0]
+
+  if (!deployer) {
+    throw new Error("No deployer signer was found. Check your network account configuration.")
+  }
+
+  const network = await hre.ethers.provider.getNetwork()
+  const chainId = normalizeChainId(network.chainId)
+  const isLocalhost = isLocalChain(chainId)
+  const liquidityBasisPoints = getBasisPointsEnv("SEED_LIQUIDITY_BPS", 10000)
+
+  if (liquidityBasisPoints === 0) {
+    throw new Error("SEED_LIQUIDITY_BPS must be greater than zero")
+  }
+
+  const swapsPerPool = getPositiveIntegerEnv("SEED_SWAPS_PER_POOL", isLocalhost ? 6 : 0)
+  const txDelayMs = getPositiveIntegerEnv("SEED_TX_DELAY_MS", isLocalhost ? 0 : 1500)
+  const { networkKey, data: networkConfig } = getNetworkConfig(loadConfig(), chainId)
+  const investors = isLocalhost ? signers.slice(1, 5).filter(Boolean) : []
+
+  console.log(`Connected to ${hre.network.name} chain ID: ${chainId}`)
+  console.log(`Config network key: ${networkKey}`)
+  console.log(`Deployer: ${deployer.address}`)
+  console.log(`Liquidity scale: ${liquidityBasisPoints / 100}%`)
+  console.log(`Swaps per pool: ${swapsPerPool}`)
+
+  if (!isLocalhost) {
+    console.log("Live network mode: using deployer only.")
+  }
+
+  console.log("\nLoading deployed contracts from src/config.json...")
+  const { tokenList, nmn } = await loadContracts(networkConfig)
+
+  await distributeLocalTokens(tokenList, deployer, investors, chainId)
+
+  console.log("\nApproving tokens to NMN contract...")
+  for (const token of tokenList) {
+    await ensureMaxApproval(token, deployer, nmn.address, chainId)
+  }
+
+  await initializePools(nmn, deployer, tokenList, chainId)
+  await seedLiquidity(nmn, deployer, tokenList, chainId, liquidityBasisPoints)
+  await simulateSwaps(nmn, deployer, tokenList, chainId, liquidityBasisPoints, swapsPerPool, txDelayMs)
+
+  console.log("\n============================================================")
+  console.log(`Seed script completed for network key: ${networkKey}`)
+  console.log("============================================================\n")
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+}
+
+module.exports = { main }
