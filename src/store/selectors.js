@@ -140,6 +140,7 @@ export const liquidityPerformanceSelector = createSelector(
         type: 'LiquidityAdded',
         shareAmountMinted: log.args.shareAmountMinted.toString(),
         currentSqrtK: log.args.currentSqrtK.toString(),
+        totalPoolShares: log.args.currentTotalShares ? log.args.currentTotalShares.toString() : '0',
         timestamp: Number(log.args.timestamp)
       }));
 
@@ -160,24 +161,31 @@ export const liquidityPerformanceSelector = createSelector(
     // 4. Combine and chronologically sort events
     const fullHistory = [...formattedAdd, ...formattedRemove].sort((a, b) => a.timestamp - b.timestamp)
 
-    // 5. Run the core off-chain geometric share-weighted rolling average loop
+    // 5. Run the core off-chain weighted arithmetic share value V rolling average loop
     let userShares = 0
-    let userSqrtK = 0
-    let lastEventPoolSqrtK = 0
+    let userV = 0
+    let lastEventPoolV  = 0
 
     for (const event of fullHistory) {
       if (event.type === 'LiquidityAdded') {
         const mintedSharesNum = parseNum(event.shareAmountMinted)
         const poolSqrtKNum = parseNum(event.currentSqrtK)
-        lastEventPoolSqrtK = poolSqrtKNum
+        const totalPoolSharesNum = parseNum(event.totalPoolShares)
 
-        if (userShares === 0 || userSqrtK === 0) {
-          userSqrtK = poolSqrtKNum
+        // Prevent division-by-zero errors if totalPoolShares isn't fully updated yet
+        const currentPoolShares = totalPoolSharesNum > 0 ? totalPoolSharesNum : mintedSharesNum
+        
+        // Calculate pool V at the historical point: sqrt(K) / Total Pool Shares
+        const historicalPoolV = poolSqrtKNum / currentPoolShares
+        lastEventPoolV = historicalPoolV
+
+        if (userShares === 0 || userV === 0) {
+          userV = historicalPoolV
           userShares = mintedSharesNum
         } else {
           const totalNewSharesNum = userShares + mintedSharesNum
-          const logAvg = ((userShares * Math.log(userSqrtK)) + (mintedSharesNum * Math.log(poolSqrtKNum))) / totalNewSharesNum
-          userSqrtK = Math.exp(logAvg)
+          // Weighted Arithmetic Mean
+          userV = ((userShares * userV) + (mintedSharesNum * historicalPoolV)) / totalNewSharesNum
           userShares = totalNewSharesNum
         }
       }
@@ -185,8 +193,8 @@ export const liquidityPerformanceSelector = createSelector(
         const sharesRemainingNum = parseNum(event.userSharesRemaining)
         if (sharesRemainingNum <= 0) {
           userShares = 0
-          userSqrtK = 0
-          lastEventPoolSqrtK = 0
+          userV = 0
+          lastEventPoolV = 0
         } else {
           userShares = sharesRemainingNum
         }
@@ -197,26 +205,31 @@ export const liquidityPerformanceSelector = createSelector(
     const poolId = `${lowIndex}-${highIndex}`
     const currentPool = poolData[poolId]
 
-    let livePoolSqrtKNum = 0
+    let livePoolVNum  = 0
     if (currentPool && currentPool.reserve0 && currentPool.reserve1) {
       const res0Num = parseNum(currentPool.reserve0)
       const res1Num = parseNum(currentPool.reserve1)
-      livePoolSqrtKNum = Math.sqrt(res0Num * res1Num)
+      const poolTotalSharesNum = parseNum(currentPool.totalShares)
+      const livePoolSqrtKNum = Math.sqrt(res0Num * res1Num)
+
+      if (poolTotalSharesNum > 0) {
+        livePoolVNum = livePoolSqrtKNum / poolTotalSharesNum
+      }
     }
 
-    // Handle initial rendering scale fallback logic safely
-    if (livePoolSqrtKNum < (userSqrtK / 2) && lastEventPoolSqrtK > 0) {
-      livePoolSqrtKNum = lastEventPoolSqrtK
+     // Handle initial rendering scale fallback logic safely
+    if (livePoolVNum === 0 && lastEventPoolV > 0) {
+    livePoolVNum = lastEventPoolV
     }
 
     let growthFactor = 0;
-    if (userSqrtK > 0) {
-      growthFactor = livePoolSqrtKNum / userSqrtK
+    if (userV > 0) {
+      growthFactor = livePoolVNum / userV
     }
 
     return {
-      trackedUserSqrtK: userSqrtK,
-      livePoolSqrtK: livePoolSqrtKNum,
+      trackedUserV: userV,
+      livePoolV: livePoolVNum,
       roiPercentage: growthFactor > 0 ? ((growthFactor - 1) * 100).toFixed(4) + "%" : "0.0000%"
     }
   }

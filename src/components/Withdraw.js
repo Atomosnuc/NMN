@@ -227,36 +227,36 @@ const Withdraw = () => {
               )}
             </Row>
 
-            {/* --- LIVE OFF-CHAIN SQRT(K) PERFORMANCE DASHBOARD PANEL --- */}
+            {/* --- LIVE OFF-CHAIN V PERFORMANCE DASHBOARD PANEL --- */}
             {(tokenIndex0 !== null && tokenIndex1 !== null && tokenIndex0 !== tokenIndex1) && (
               <>
                 <hr />
                 <Row className='px-2 my-2'>
                   <div className='p-3 border rounded style-none' style={{ backgroundColor: '#f8f9fa' }}>
-                    <h6 className='text-primary mb-3 fw-bold'>📈 Pool Value Performance</h6>
-                    {!userGrowthData || userGrowthData.trackedUserSqrtK === 0 ? (
+                    <h6 className='text-primary mb-3 fw-bold'>📈 Liquidity Value per Share (V) Performance</h6>
+                    {!userGrowthData ? (
                       <div className='text-center py-2'>
                         <Spinner animation='border' size='sm' className='me-2' />
                         <small className='text-muted'>Calculating entry metrics...</small>
                       </div>
-                    ) : (
+                    ) : !userGrowthData || userGrowthData.trackedUserV=== 0 ? (
+                      <div className='text-center py-2'>
+                        <small className='text-muted'>You have no shares in this pool</small>
+                      </div>
+                    ) :
+                    (
                       <>
                         <div className='d-flex justify-content-between mb-2 small'>
-                          <span className='text-muted'>Your Entry Weighted √K:</span>
-                          <span className='font-monospace fw-bold'>{userGrowthData.trackedUserSqrtK ? userGrowthData.trackedUserSqrtK.toFixed(4) : '0.0000'}</span>
+                          <span className='text-muted'>Your Entry Weighted V:</span>
+                          <span className='font-monospace fw-bold'>{userGrowthData.trackedUserV ? userGrowthData.trackedUserV.toFixed(4) : '0.0000'}</span>
                         </div>
                         <div className='d-flex justify-content-between mb-2 small'>
-                          <span className='text-muted'>Current Live Pool √K:</span>
-                          <span className='font-monospace fw-bold'>{userGrowthData.livePoolSqrtK ? userGrowthData.livePoolSqrtK.toFixed(4) : '0.0000'}</span>
+                          <span className='text-muted'>Current Live Pool V:</span>
+                          <span className='font-monospace fw-bold'>{userGrowthData.livePoolV ? userGrowthData.livePoolV.toFixed(4) : '0.0000'}</span>
                         </div>
                         <div className='d-flex justify-content-between border-top pt-2 mt-2'>
                           <span className='fw-bold text-muted small'>Accrued Fee Gains:</span>
                           <span className='text-success font-monospace fw-bold'>+{userGrowthData.roiPercentage}</span>
-                        </div>
-                        <div className='mt-2 text-center'>
-                          <small style={{ fontSize: '10px' }} className='text-muted d-block'>
-                            * Measures structural growth of your shares driven by collected trading swap fees.
-                          </small>
                         </div>
                       </>
                     )}
