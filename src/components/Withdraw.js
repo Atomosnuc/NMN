@@ -60,7 +60,7 @@ const Withdraw = () => {
   }, [provider, nmn, isSuccess, dispatch])
 
   // --- THE UNIFIED CORE METRICS SELECTOR ---
-  const userGrowthData = useSelector(state => 
+  const userGrowthData = useSelector(state =>
     liquidityPerformanceSelector(state)
   )
 
@@ -83,7 +83,7 @@ const Withdraw = () => {
       try {
         const parsedShares = ethers.utils.parseUnits(amount.toString(), 'ether')
         const results = await nmn.calculateWithdrawAmount(tokenIndex0, tokenIndex1, parsedShares)
-        
+
         setEstToken0(parseNum(results.coin0Amount).toString())
         setEstToken1(parseNum(results.coin1Amount).toString())
       } catch (error) {
@@ -129,6 +129,18 @@ const Withdraw = () => {
       console.error("Execution failed within liquidity withdrawal sequence:", error)
     } finally {
       setAmount('')
+    }
+  }
+
+  const maxSharesHandler = () => {
+    const totalAvailable = getActivePoolShares()
+    const numericShares = parseNum(totalAvailable)
+
+    // 3. Update the state. If no shares, default the input to '0'
+    if (numericShares > 0) {
+      setAmount(numericShares.toString())
+    } else {
+      setAmount('0')
     }
   }
 
@@ -200,6 +212,17 @@ const Withdraw = () => {
                   disabled={tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1}
                   className={isInsufficientShares ? "is-invalid" : ""}
                 />
+                {/* MAX BUTTON*/}
+                {tokenIndex0 !== null && tokenIndex1 !== null && tokenIndex0 !== tokenIndex1 && availableShares > 0 && (
+                  <Button
+                    variant="outline-secondary"
+                    type="button"
+                    onClick={maxSharesHandler}
+                    style={{ fontWeight: 'bold', fontSize: '0.85rem' }}
+                  >
+                    MAX
+                  </Button>
+                )}
                 <InputGroup.Text style={{ width: "100px" }} className='justify-content-center'>
                   Shares
                 </InputGroup.Text>
@@ -239,27 +262,27 @@ const Withdraw = () => {
                         <Spinner animation='border' size='sm' className='me-2' />
                         <small className='text-muted'>Calculating entry metrics...</small>
                       </div>
-                    ) : !userGrowthData || userGrowthData.trackedUserV=== 0 ? (
+                    ) : !userGrowthData || userGrowthData.trackedUserV === 0 ? (
                       <div className='text-center py-2'>
                         <small className='text-muted'>You have no shares in this pool</small>
                       </div>
                     ) :
-                    (
-                      <>
-                        <div className='d-flex justify-content-between mb-2 small'>
-                          <span className='text-muted'>Your Entry Weighted V:</span>
-                          <span className='font-monospace fw-bold'>{userGrowthData.trackedUserV ? userGrowthData.trackedUserV.toFixed(4) : '0.0000'}</span>
-                        </div>
-                        <div className='d-flex justify-content-between mb-2 small'>
-                          <span className='text-muted'>Current Live Pool V:</span>
-                          <span className='font-monospace fw-bold'>{userGrowthData.livePoolV ? userGrowthData.livePoolV.toFixed(4) : '0.0000'}</span>
-                        </div>
-                        <div className='d-flex justify-content-between border-top pt-2 mt-2'>
-                          <span className='fw-bold text-muted small'>Accrued Fee Gains:</span>
-                          <span className='text-success font-monospace fw-bold'>+{userGrowthData.roiPercentage}</span>
-                        </div>
-                      </>
-                    )}
+                      (
+                        <>
+                          <div className='d-flex justify-content-between mb-2 small'>
+                            <span className='text-muted'>Your Entry Weighted V:</span>
+                            <span className='font-monospace fw-bold'>{userGrowthData.trackedUserV ? userGrowthData.trackedUserV.toFixed(4) : '0.0000'}</span>
+                          </div>
+                          <div className='d-flex justify-content-between mb-2 small'>
+                            <span className='text-muted'>Current Live Pool V:</span>
+                            <span className='font-monospace fw-bold'>{userGrowthData.livePoolV ? userGrowthData.livePoolV.toFixed(4) : '0.0000'}</span>
+                          </div>
+                          <div className='d-flex justify-content-between border-top pt-2 mt-2'>
+                            <span className='fw-bold text-muted small'>Accrued Fee Gains:</span>
+                            <span className='text-success font-monospace fw-bold'>+{userGrowthData.roiPercentage}</span>
+                          </div>
+                        </>
+                      )}
                   </div>
                 </Row>
               </>
