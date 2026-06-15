@@ -33,10 +33,24 @@ import TOKEN_ABI from '../abis/Token.json'
 import NMN_ABI from '../abis/NMN.json'
 import config from '../config.json'
 
-export const loadProvider = (dispatch) => {
-  const provider = new ethers.providers.Web3Provider(window.ethereum)
-  dispatch(setProvider(provider))
+export const loadProvider = (existingProvider, dispatch) => {
+  if (existingProvider) {
+    return existingProvider
+  }
 
+  // Check if Ethers has already assigned its internal listener cache to window.ethereum
+  if (window.ethereum && window.ethereum._ethersProvider) {
+    const cachedProvider = window.ethereum._ethersProvider
+    dispatch(setProvider(cachedProvider))
+    return cachedProvider
+  }
+
+  const provider = new ethers.providers.Web3Provider(window.ethereum)
+  // Cache the instance directly onto the window object so dev-refreshes can see it
+  if (window.ethereum) {
+    window.ethereum._ethersProvider = provider
+  }
+  dispatch(setProvider(provider))
   return provider
 }
 
@@ -63,8 +77,16 @@ export const loadTokens = async (provider, chainId, dispatch) => {
   const contracts = []
   const symbols = []
 
+  // Safely parse chain ID to string format
+  const networkId = chainId ? chainId.toString() : ""
+
+  if (!config[networkId]) {
+    console.error(`Network configuration missing for chain ID: ${networkId}`)
+    return []
+  }
+
   for (const key of coinKeys) {
-    const address = config[chainId][key].address
+    const address = config[networkId][key].address
     const contract = new ethers.Contract(address, TOKEN_ABI, provider)
     contracts.push(contract)
     symbols.push(await contract.symbol())
@@ -73,10 +95,17 @@ export const loadTokens = async (provider, chainId, dispatch) => {
   dispatch(setContracts(contracts))
   dispatch(setSymbols(symbols))
   return contracts
-};
+}
 
 export const loadNMN = async (provider, chainId, dispatch) => {
-  const nmn = new ethers.Contract(config[chainId].nmn.address, NMN_ABI, provider)
+  const networkId = chainId ? chainId.toString() : ""
+
+  if (!config[networkId] || !config[networkId].nmn) {
+    console.error(`NMN contract missing for network: ${networkId}`)
+    return null
+  }
+
+  const nmn = new ethers.Contract(config[networkId].nmn.address, NMN_ABI, provider)
   dispatch(setContract(nmn))
   return nmn
 };
@@ -102,7 +131,7 @@ export const loadAllPoolsAndBalances = async (nmn, tokens, account, dispatch) =>
     for (let j = i + 1; j < totalCoins; j++) {
       try {
         const pool = await nmn.getPoolState(i, j)
-        
+
         dispatch(poolStateLoaded({
           coin0: i,
           coin1: j,
@@ -208,7 +237,9 @@ export const executeSwap = async (provider, nmn, tokenInContract, coinIndexIn, c
 export const loadAllSwaps = async (provider, nmn, dispatch) => {
   const block = await provider.getBlockNumber()
   const { chainId } = await provider.getNetwork()
-  const fromBlock = config[chainId]?.nmn?.deployBlock ?? 0
+  const networkId = chainId ? chainId.toString() : ""
+
+  const fromBlock = config[networkId]?.nmn?.deployBlock ?? 0
 
   const swapStream = await nmn.queryFilter('Swap', fromBlock, block)
   const swaps = swapStream.map(event => ({

@@ -12,13 +12,14 @@ import { ethers } from 'ethers';
 
 import Alert from './Alert';
 import { getPoolId } from '../store/reducers/nmn'
+import { setSelectedTokenA, setSelectedTokenB } from '../store/reducers/nmn'
 import { addLiquidity, loadAllPoolsAndBalances } from '../store/interactions'
 
 const Deposit = () => {
   const dispatch = useDispatch()
 
-  const [tokenIndex0, setTokenIndex0] = useState(null)
-  const [tokenIndex1, setTokenIndex1] = useState(null)
+  const tokenIndex0 = useSelector(state => state.nmn.selectedTokenA)
+  const tokenIndex1 = useSelector(state => state.nmn.selectedTokenB)
 
   const [amount0, setAmount0] = useState('')
   const [amount1, setAmount1] = useState('')
@@ -42,7 +43,9 @@ const Deposit = () => {
   const transactionHash = useSelector(state => state.nmn.depositing.transactionHash)
 
   const amountHandler = async (e) => {
+    const targetId = e.target.id
     const value = e.target.value
+    
     
     if (tokenIndex0 === null || tokenIndex1 === null || tokenIndex0 === tokenIndex1) {
       window.alert("Please pick two distinct tokens before entering amounts.")
@@ -58,7 +61,7 @@ const Deposit = () => {
     try {
       const parsedAmount = ethers.utils.parseUnits(value, 'ether')
 
-      if (e.target.id === 'token0Input') {
+      if (targetId === 'token0Input') {
         setAmount0(value)
         const result = await nmn.calculateLiquidityAmount(tokenIndex0, tokenIndex1, parsedAmount)
         setAmount1(ethers.utils.formatUnits(result, 'ether'))
@@ -68,7 +71,7 @@ const Deposit = () => {
         setAmount0(ethers.utils.formatUnits(result, 'ether'))
       }
     } catch (error) {
-      if (e.target.id === 'token0Input') {
+      if (targetId === 'token0Input') {
         setAmount0(value)
       } else {
         setAmount1(value)
@@ -185,7 +188,7 @@ const Deposit = () => {
                   title={tokenIndex0 !== null ? symbols[tokenIndex0] : "Select Token"}
                 >
                   {symbols.map((symbol, index) => (
-                    <DropdownItem key={index} onClick={() => { setTokenIndex0(index); setAmount0(''); setAmount1(''); }}>
+                    <DropdownItem key={index} onClick={() => { dispatch(setSelectedTokenA(index)); setAmount0(''); setAmount1(''); }}>
                       {symbol}
                     </DropdownItem>
                   ))}
@@ -217,7 +220,7 @@ const Deposit = () => {
                   title={tokenIndex1 !== null ? symbols[tokenIndex1] : "Select Token"}
                 >
                   {symbols.map((symbol, index) => (
-                    <DropdownItem key={index} onClick={() => { setTokenIndex1(index); setAmount0(''); setAmount1(''); }}>
+                    <DropdownItem key={index} onClick={() => { dispatch(setSelectedTokenB(index)); setAmount0(''); setAmount1(''); }}>
                       {symbol}
                     </DropdownItem>
                   ))}

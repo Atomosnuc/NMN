@@ -11,6 +11,8 @@ export const nmn = createSlice({
   name: 'nmn',
   initialState: {
     contract: null,
+    selectedTokenA: 0,
+    selectedTokenB: 1,
     // poolData holds distinct parameters indexed by sorted pool composite keys
     // Structure: { "0-1": { reserve0: '0', reserve1: '0', totalShares: '0', userShares: '0', exists: false } }
     poolData: {},
@@ -23,6 +25,12 @@ export const nmn = createSlice({
   reducers: {
     setContract: (state, action) => {
       state.contract = action.payload;
+    },
+    setSelectedTokenA: (state, action) => {
+      state.selectedTokenA = action.payload
+    },
+    setSelectedTokenB: (state, action) => {
+      state.selectedTokenB = action.payload
     },
     poolStateLoaded: (state, action) => {
       const { coin0, coin1, reserve0, reserve1, totalShares, exists } = action.payload
@@ -84,6 +92,8 @@ export const nmn = createSlice({
 
 export const {
   setContract,
+  setSelectedTokenA, 
+  setSelectedTokenB,
   poolStateLoaded,
   poolSharesLoaded,
   swapsLoaded,

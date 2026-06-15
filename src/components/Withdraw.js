@@ -12,6 +12,7 @@ import { ethers } from 'ethers'
 
 import Alert from './Alert'
 import { getPoolId } from '../store/reducers/nmn'
+import { setSelectedTokenA, setSelectedTokenB } from '../store/reducers/nmn'
 import { removeLiquidity, loadAllPoolsAndBalances, loadAllLiquidityEvents } from '../store/interactions'
 import { liquidityPerformanceSelector } from '../store/selectors'
 
@@ -31,8 +32,8 @@ const parseNum = (rawVal) => {
 const Withdraw = () => {
   const dispatch = useDispatch()
 
-  const [tokenIndex0, setTokenIndex0] = useState(null)
-  const [tokenIndex1, setTokenIndex1] = useState(null)
+  const tokenIndex0 = useSelector(state => state.nmn.selectedTokenA)
+  const tokenIndex1 = useSelector(state => state.nmn.selectedTokenB)
 
   const [amount, setAmount] = useState('')
   const [estToken0, setEstToken0] = useState('0.0')
@@ -56,12 +57,11 @@ const Withdraw = () => {
     if (provider && nmn) {
       loadAllLiquidityEvents(provider, nmn, dispatch)
     }
-  }, [provider, nmn, isSuccess, tokenIndex0, tokenIndex1, dispatch])
+  }, [provider, nmn, isSuccess, dispatch])
 
   // --- THE UNIFIED CORE METRICS SELECTOR ---
-  // Replaces the entire old 80-line local loop! Passes indices to the global math model.
   const userGrowthData = useSelector(state => 
-    liquidityPerformanceSelector(state, tokenIndex0, tokenIndex1)
+    liquidityPerformanceSelector(state)
   )
 
   // Extract the active user shares balance for validation layout
@@ -160,7 +160,7 @@ const Withdraw = () => {
                   title={tokenIndex0 !== null ? symbols[tokenIndex0] : "Token A"}
                 >
                   {symbols.map((symbol, index) => (
-                    <DropdownItem key={index} onClick={() => { setTokenIndex0(index); setAmount(''); }}>
+                    <DropdownItem key={index} onClick={() => { dispatch(setSelectedTokenA(index)); setAmount(''); }}>
                       {symbol}
                     </DropdownItem>
                   ))}
@@ -172,7 +172,7 @@ const Withdraw = () => {
                   title={tokenIndex1 !== null ? symbols[tokenIndex1] : "Token B"}
                 >
                   {symbols.map((symbol, index) => (
-                    <DropdownItem key={index} onClick={() => { setTokenIndex1(index); setAmount(''); }}>
+                    <DropdownItem key={index} onClick={() => { dispatch(setSelectedTokenB(index)); setAmount(''); }}>
                       {symbol}
                     </DropdownItem>
                   ))}
@@ -185,7 +185,7 @@ const Withdraw = () => {
               <div className='d-flex justify-content-between'>
                 <Form.Label><strong>Shares to Remove:</strong></Form.Label>
                 <Form.Text className={isInsufficientShares ? "text-danger fw-bold" : "text-muted"}>
-                  Your Pool Shares: {availableShares.toFixed(4)}
+                  Your Pool Shares: {(availableShares || 0).toFixed(4)}
                 </Form.Text>
               </div>
               <InputGroup>
@@ -273,11 +273,11 @@ const Withdraw = () => {
                   <h6 className='text-muted mb-3'>Estimated Tokens To Receive:</h6>
                   <p className='d-flex justify-content-between mb-2'>
                     <span><strong>{symbols[tokenIndex0]} Returned:</strong></span>
-                    <span className="text-success font-monospace fw-bold">{Number(estToken0).toFixed(4)}</span>
+                    <span className="text-success font-monospace fw-bold">{(Number(estToken0) || 0).toFixed(4)}</span>
                   </p>
                   <p className='d-flex justify-content-between'>
                     <span><strong>{symbols[tokenIndex1]} Returned:</strong></span>
-                    <span className="text-success font-monospace fw-bold">{Number(estToken1).toFixed(4)}</span>
+                    <span className="text-success font-monospace fw-bold">{(Number(estToken1) || 0).toFixed(4)}</span>
                   </p>
                 </Row>
               </>
@@ -300,7 +300,7 @@ const Withdraw = () => {
         <Alert message={'Withdraw Failed'} transactionHash={null} variant={'danger'} setShowAlert={setShowAlert} />
       ) : null}
     </div>
-  );
+  )
 }
 
 export default Withdraw

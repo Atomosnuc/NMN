@@ -9,7 +9,10 @@ const getActiveAccount = state => state.provider.account
 const getPoolData = state => state.nmn.poolData
 
 // Selectors to pass the active user dropdown selections dynamically into the chart pipeline
-export const selectActivePair = (state, inputIndex, outputIndex) => ({ inputIndex, outputIndex })
+export const selectActivePair = (state) => ({
+  inputIndex: state.nmn.selectedTokenA,
+  outputIndex: state.nmn.selectedTokenB
+})
 
 export const chartSelector = createSelector(
   [swaps, tokens, selectActivePair],

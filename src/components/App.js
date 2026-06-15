@@ -1,24 +1,15 @@
-import { useEffect, useState } from 'react'
-import { useDispatch , useSelector} from 'react-redux'
+import { useEffect, useCallback } from 'react'
+import { useSelector, useDispatch } from 'react-redux'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { Container } from 'react-bootstrap'
-import { ethers } from 'ethers'
 
 // Components
 import Navigation from './Navigation'
-// import Loading from './Loading'
 import Tabs from './Tabs'
 import Swap from './Swap'
 import Deposit from './Deposit'
 import Withdraw from './Withdraw'
 import Charts from './Charts'
-
-// ABIs: Import your contract ABIs here
-// import TOKEN_ABI from '../abis/Token.json'
-
-// Config: Import your network config here
-// import config from '../config.json';
-
 
 import {
   loadProvider,
@@ -32,47 +23,59 @@ import {
 function App() {
   const dispatch = useDispatch()
 
-  const account = useSelector(state => state.provider.account) || '0x0'
+  const providerConnection = useSelector(state => state.provider.connection)
+  // Handlers
 
-  const loadBlockchainData = async () => {
-    // Initiate provider & network
-    const provider = await loadProvider(dispatch)
-    const chainId = await loadNetwork(provider, dispatch)
-  
-    
-    // Initiate contracts
-    const tokens = await loadTokens(provider, chainId, dispatch)
-    const nmn = await loadNMN(provider, chainId, dispatch)
+  const loadBlockchainData = useCallback(async () => {
+    try {
+      // Initiate provider & network
+      const provider = await loadProvider(providerConnection, dispatch)
+      const chainId = await loadNetwork(provider, dispatch)
 
-    const currentAccount = await loadAccount(dispatch)
+      // Initiate contracts
+      const tokens = await loadTokens(provider, chainId, dispatch)
+      const nmn = await loadNMN(provider, chainId, dispatch)
 
-    await loadAllPoolsAndBalances(
-      nmn, 
-      tokens, 
-      currentAccount, // Works even if null (e.g. user hasn't connected wallet yet)
-      dispatch
-    )
+      // Load account
+      const currentAccount = await loadAccount(dispatch)
 
-    // Reload page when network changes
-    window.ethereum.on('chainChanged', () => {
-      window.location.reload()
-    })
+      // Loads pools and Balances
+      await loadAllPoolsAndBalances(nmn, tokens, currentAccount, dispatch)
+    } catch (error) {
+      console.error("Failed to load blockchain data:", error)
+      // Optional: Dispatch an error state to Redux to show a friendly UI alert
+    }
+  }, [providerConnection, dispatch])
 
-    // Fetch current account from Metamask when changed
-    window.ethereum.on('accountsChanged', async () => {
-      console.log('accountsChanged')
-      const newAccount = await loadAccount(dispatch)
-      
-      //Re-fetch pool user balances if they switch wallets
-      if(nmn && tokens) {
-        await loadAllPoolsAndBalances(nmn, tokens, newAccount, dispatch)
-      }
-    })
-  }
+  const chainChangedHandler = useCallback(() => {
+    window.location.reload()
+  }, [])
+
+  const accountsChangedHandler = useCallback(async () => {
+    console.log('accountsChanged triggered')
+    await loadBlockchainData()
+  }, [loadBlockchainData])
 
   useEffect(() => {
     loadBlockchainData()
-  },[dispatch] );
+
+    if (window.ethereum) {
+      // Force remove any old or dangling handlers left behind by previous dev-refreshes
+      window.ethereum.removeListener('chainChanged', chainChangedHandler)
+      window.ethereum.removeListener('accountsChanged', accountsChangedHandler)
+
+      // 2. Attach clean, fresh listeners safely
+      window.ethereum.on('chainChanged', chainChangedHandler)
+      window.ethereum.on('accountsChanged', accountsChangedHandler)
+    }
+
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener('chainChanged', chainChangedHandler)
+        window.ethereum.removeListener('accountsChanged', accountsChangedHandler)
+      }
+    }
+  }, [loadBlockchainData, chainChangedHandler, accountsChangedHandler])
 
   return (
     <Container>
@@ -80,9 +83,9 @@ function App() {
 
         <Navigation />
 
-        <hr/>
+        <hr />
 
-        <Tabs/>
+        <Tabs />
 
         <Routes>
           <Route exact path='/' element={<Swap />} />

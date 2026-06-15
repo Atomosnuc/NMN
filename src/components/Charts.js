@@ -1,27 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import Table from 'react-bootstrap/Table'
 import Chart from 'react-apexcharts'
-import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import Col from 'react-bootstrap/Col'
 import DropdownButton from 'react-bootstrap/DropdownButton'
 import DropdownItem from 'react-bootstrap/esm/DropdownItem'
 import Card from 'react-bootstrap/Card'
 
-import { options, series } from './Charts.config'
+import { options} from './Charts.config'
 import { chartSelector } from '../store/selectors'
 import { ethers } from 'ethers'
 
 import Loading from './Loading'
 import { loadAllSwaps } from '../store/interactions'
+import { setSelectedTokenA, setSelectedTokenB } from '../store/reducers/nmn'
 
 const Charts = () => {
   const dispatch = useDispatch()
 
   // Track the chosen tokens for chart viewing. Defaulting to index 0 (Mirian) and index 1 (Castar)
-  const [inputIndex, setInputIndex] = useState(0)
-  const [outputIndex, setOutputIndex] = useState(1)
+  const inputIndex = useSelector(state => state.nmn.selectedTokenA)
+  const outputIndex = useSelector(state => state.nmn.selectedTokenB)
 
   const provider = useSelector(state => state.provider.connection)
   const tokens = useSelector(state => state.tokens.contracts)
@@ -58,7 +58,7 @@ const Charts = () => {
                   className="w-75"
                 >
                   {symbols.map((symbol, index) => (
-                    <DropdownItem key={index} onClick={() => setInputIndex(index)}>
+                    <DropdownItem key={index} onClick={() => dispatch(setSelectedTokenA(index))}>
                       {symbol}
                     </DropdownItem>
                   ))}
@@ -76,7 +76,7 @@ const Charts = () => {
                   className="w-75"
                 >
                   {symbols.map((symbol, index) => (
-                    <DropdownItem key={index} onClick={() => setOutputIndex(index)}>
+                    <DropdownItem key={index} onClick={() => dispatch(setSelectedTokenB(index))}>
                       {symbol}
                     </DropdownItem>
                   ))}
